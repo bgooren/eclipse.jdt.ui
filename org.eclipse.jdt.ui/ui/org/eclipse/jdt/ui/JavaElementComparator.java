@@ -50,6 +50,7 @@ import org.eclipse.jdt.internal.corext.util.JavaModelUtil;
 import org.eclipse.jdt.internal.corext.util.JdtFlags;
 
 import org.eclipse.jdt.internal.ui.JavaPlugin;
+import org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder;
 import org.eclipse.jdt.internal.ui.packageview.PackageFragmentRootContainer;
 import org.eclipse.jdt.internal.ui.preferences.MembersOrderPreferenceCache;
 
@@ -181,6 +182,8 @@ public class JavaElementComparator extends ViewerComparator {
 		} else if (element instanceof IProject) {
 			return PROJECTS;
 		} else if (element instanceof IContainer) {
+			return RESOURCEFOLDERS;
+		} else if (element instanceof FoldedResourceFolder) {
 			return RESOURCEFOLDERS;
 		} else if (element instanceof IJarEntryResource) {
 			if (((IJarEntryResource) element).isFile()) {

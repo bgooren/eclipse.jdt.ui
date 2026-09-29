@@ -129,6 +129,10 @@ public class PackageExplorerContentProvider extends StandardJavaElementContentPr
 		return PreferenceConstants.getPreferenceStore().getBoolean(PreferenceConstants.APPEARANCE_FOLD_RESOURCE_FOLDERS_IN_PACKAGE_EXPLORER);
 	}
 
+	protected boolean isResourceFolderFoldingEnabled() {
+		return !fIsFlatLayout && fFoldResourceFolders;
+	}
+
 	protected Object getViewerInput() {
 		return fInput;
 	}
@@ -617,7 +621,7 @@ public class PackageExplorerContentProvider extends StandardJavaElementContentPr
 		return result;
 	}
 
-	private boolean isVisible(Object parent, Object child) {
+	protected boolean isVisible(Object parent, Object child) {
 		if (fViewer == null) {
 			return true;
 		}

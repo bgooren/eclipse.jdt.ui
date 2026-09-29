@@ -71,7 +71,7 @@ public class JavaNavigatorRefactorActionProvider extends CommonActionProvider {
 	@Override
 	public void setContext(ActionContext context) {
 		if (fRefactorGroup != null) {
-			fRefactorGroup.setContext(context);
+			fRefactorGroup.setContext(JavaNavigatorActionProvider.toResourceContext(context));
 		}
 	}
 

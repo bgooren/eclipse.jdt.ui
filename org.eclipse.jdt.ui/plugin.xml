@@ -141,6 +141,13 @@
             <adapter type="org.eclipse.jdt.core.IJavaElement"/>
 		</factory>
 
+		<!-- Marker adapter used by the contextual Run As / Debug As support. -->
+		<factory
+			class=""
+			adaptableType="org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder">
+			<adapter type="org.eclipse.debug.ui.actions.ILaunchable"/>
+		</factory>
+
 		<factory
             class="org.eclipse.jdt.internal.ui.MarkerAdapterFactory"
             adaptableType="org.eclipse.core.resources.IMarker">
@@ -6194,16 +6201,10 @@
 				name="%javaResourceLabelsContentName"
 				priority="highest">
 			<triggerPoints>
-				<and>
-					<instanceof value="org.eclipse.core.resources.IFolder" />
-					<test property="org.eclipse.core.resources.projectNature" value="org.eclipse.jdt.core.javanature" />
-				</and>
+				<instanceof value="org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder" />
 			</triggerPoints>
 			<possibleChildren>
-				<and>
-					<instanceof value="org.eclipse.core.resources.IFolder" />
-					<test property="org.eclipse.core.resources.projectNature" value="org.eclipse.jdt.core.javanature" />
-				</and>
+				<instanceof value="org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder" />
 			</possibleChildren>
 			<override
 					policy="InvokeAlwaysRegardlessOfSuppressedExt"
@@ -6226,6 +6227,7 @@
 					<instanceof value="org.eclipse.jdt.core.IJavaElement" />
 					<instanceof value="org.eclipse.jdt.core.IJarEntryResource" />
 					<instanceof value="org.eclipse.jdt.internal.ui.packageview.PackageFragmentRootContainer" />
+					<instanceof value="org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder" />
  				</or>
 			</triggerPoints>
 			<possibleChildren>
@@ -6234,6 +6236,7 @@
 					<instanceof value="org.eclipse.jdt.core.IJavaElement" />
 					<instanceof value="org.eclipse.jdt.core.IJarEntryResource" />
 					<instanceof value="org.eclipse.jdt.internal.ui.packageview.PackageFragmentRootContainer" />
+					<instanceof value="org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder" />
 				</or>
 			</possibleChildren>
 			<actionProvider
@@ -6263,6 +6266,7 @@
 								<instanceof value="org.eclipse.jdt.core.IJavaElement" />
 								<instanceof value="org.eclipse.jdt.core.IJarEntryResource" />
 								<instanceof	value="org.eclipse.jdt.internal.ui.packageview.PackageFragmentRootContainer" />
+								<instanceof value="org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder" />
 								<adapt type="java.util.Collection">
 									<count value="0" />
 								</adapt>
@@ -6284,6 +6288,7 @@
 						<instanceof value="org.eclipse.jdt.core.IJavaElement" />
 						<instanceof value="org.eclipse.jdt.core.IJarEntryResource" />
 						<instanceof	value="org.eclipse.jdt.internal.ui.packageview.PackageFragmentRootContainer" />
+						<instanceof value="org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder" />
 						<adapt type="java.util.Collection">
 							<count value="0" />
 						</adapt>
@@ -6304,6 +6309,7 @@
 						<instanceof value="org.eclipse.jdt.core.IJavaElement" />
 						<instanceof value="org.eclipse.jdt.core.IJarEntryResource" />
 						<instanceof value="org.eclipse.jdt.internal.ui.packageview.PackageFragmentRootContainer" />
+						<instanceof value="org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder" />
 						<adapt type="java.util.Collection">
 							<count value="0" />
 						</adapt>

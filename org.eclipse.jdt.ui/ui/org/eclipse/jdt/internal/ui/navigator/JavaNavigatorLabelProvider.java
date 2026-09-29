@@ -136,6 +136,9 @@ public class JavaNavigatorLabelProvider implements ICommonLabelProvider, IStyled
 
 	@Override
 	public Image getImage(Object element) {
+		if (element instanceof FoldedResourceFolder folded) {
+			return delegeteLabelProvider.getImage(folded.getFolder());
+		}
 		return delegeteLabelProvider.getImage(element);
 	}
 
@@ -166,11 +169,17 @@ public class JavaNavigatorLabelProvider implements ICommonLabelProvider, IStyled
 
 	@Override
 	public String getText(Object element) {
+		if (element instanceof FoldedResourceFolder folded) {
+			return folded.getLabel();
+		}
 		return delegeteLabelProvider.getText(element);
 	}
 
 	@Override
 	public StyledString getStyledText(Object element) {
+		if (element instanceof FoldedResourceFolder folded) {
+			return new StyledString(folded.getLabel());
+		}
 		return delegeteLabelProvider.getStyledText(element);
 	}
 

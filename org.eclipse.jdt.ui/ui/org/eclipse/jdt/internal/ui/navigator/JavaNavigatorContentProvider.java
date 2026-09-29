@@ -45,6 +45,8 @@ import org.eclipse.ui.navigator.PipelinedViewerUpdate;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaModel;
 import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jdt.core.IPackageFragment;
+import org.eclipse.jdt.core.IPackageFragmentRoot;
 import org.eclipse.jdt.core.JavaCore;
 
 import org.eclipse.jdt.ui.PreferenceConstants;
@@ -159,6 +161,9 @@ public class JavaNavigatorContentProvider extends
 
 	@Override
 	public boolean hasChildren(Object element) {
+		if (element instanceof FoldedResourceFolder folded) {
+			return getFoldedResourceFolderChildren(folded).length > 0;
+		}
 		if (element instanceof IProject) {
 			return ((IProject) element).isAccessible();
 		}
@@ -167,6 +172,9 @@ public class JavaNavigatorContentProvider extends
 
 	@Override
 	public Object[] getChildren(Object parentElement) {
+		if (parentElement instanceof FoldedResourceFolder folded) {
+			return getFoldedResourceFolderChildren(folded);
+		}
 		if (parentElement instanceof IWorkspaceRoot) {
 			IWorkspaceRoot root = (IWorkspaceRoot) parentElement;
 			return filterResourceProjects(root.getProjects());
@@ -174,7 +182,21 @@ public class JavaNavigatorContentProvider extends
 		if (parentElement instanceof IProject) {
 			return super.getChildren(JavaCore.create((IProject)parentElement));
 		}
-		return super.getChildren(parentElement);
+		Object[] children= super.getChildren(parentElement);
+		return parentElement instanceof IJavaElement ? wrapFoldedFolders(parentElement, children) : children;
+	}
+
+	private Object[] wrapFoldedFolders(Object parent, Object[] children) {
+		if (!isResourceFolderFoldingEnabled()) {
+			return children;
+		}
+		Object[] wrapped= children.clone();
+		for (int i= 0; i < wrapped.length; i++) {
+			if (wrapped[i] instanceof IFolder folder) {
+				wrapped[i]= createFoldedFolder(parent, folder);
+			}
+		}
+		return wrapped;
 	}
 
 	private Object findInputElement(Object newInput) {
@@ -196,16 +218,21 @@ public class JavaNavigatorContentProvider extends
 
 	@Override
 	public void getPipelinedChildren(Object parent, Set currentChildren) {
-		customize(getChildren(parent), currentChildren);
+		customize(parent, getChildren(parent), currentChildren);
+		foldPipelinedResourceFolders(parent, currentChildren);
 	}
 
 	@Override
 	public void getPipelinedElements(Object input, Set currentElements) {
-		customize(getElements(input), currentElements);
+		customize(input, getElements(input), currentElements);
+		foldPipelinedResourceFolders(input, currentElements);
 	}
 
 	@Override
 	public Object getPipelinedParent(Object object, Object suggestedParent) {
+		if (object instanceof FoldedResourceFolder folded) {
+			return folded.getParent();
+		}
 		return getParent(object);
 	}
 
@@ -325,7 +352,10 @@ public class JavaNavigatorContentProvider extends
 	 * @param javaElements the java elements
 	 * @param proposedChildren the proposed children
 	 */
-	private void customize(Object[] javaElements, Set<Object> proposedChildren) {
+	private void customize(Object parent, Object[] javaElements, Set<Object> proposedChildren) {
+		if (parent instanceof IContainer) {
+			removePhysicalPackageFolders(javaElements, proposedChildren);
+		}
 		List<?> elementList= Arrays.asList(javaElements);
 		for (Object element : proposedChildren) {
 			IResource resource= null;
@@ -349,10 +379,113 @@ public class JavaNavigatorContentProvider extends
 					proposedChildren.remove(resource);
 				}
 				proposedChildren.add(element);
+			} else if (element instanceof IFolder && parent instanceof IContainer) {
+				// Generic resource content owns raw folders in the Project Explorer.
 			} else if (element != null) {
 				proposedChildren.add(element);
 			}
 		}
+	}
+
+	private void foldPipelinedResourceFolders(Object parent, Set<Object> children) {
+		if (!(parent instanceof IContainer) || !isResourceFolderFoldingEnabled()) {
+			return;
+		}
+		foldResourceFolderChildren(parent, children);
+	}
+
+	private void foldResourceFolderChildren(Object visibleParent, Set<Object> children) {
+		for (Object child : List.copyOf(children)) {
+			if (child instanceof IFolder folder) {
+				try {
+					IFolder folded= getFoldedResourceFolder(folder);
+					if (!folder.equals(folded)) {
+						children.remove(folder);
+						children.add(new FoldedResourceFolder(visibleParent, folder, folded));
+					}
+				} catch (CoreException e) {
+					// leave the original folder unfolded
+				}
+			}
+		}
+	}
+
+	private Object[] getFoldedResourceFolderChildren(FoldedResourceFolder parent) {
+		try {
+			IFolder folder= parent.getFolder();
+			Set<Object> children= new LinkedHashSet<>(Arrays.asList(folder.members()));
+			customize(folder, super.getChildren(folder), children);
+			if (isResourceFolderFoldingEnabled()) {
+				foldResourceFolderChildren(parent, children);
+			}
+			return children.toArray();
+		} catch (CoreException e) {
+			return new Object[0];
+		}
+	}
+
+	private Object createFoldedFolder(Object parent, IFolder folder) {
+		IResource parentResource= null;
+		if (parent instanceof IJavaElement javaElement) {
+			parentResource= javaElement.getResource();
+		} else if (parent instanceof IResource resource) {
+			parentResource= resource;
+		}
+		if (!(parentResource instanceof IContainer container)) {
+			return folder;
+		}
+		IFolder first= folder;
+		while (first.getParent() instanceof IFolder ancestor && !ancestor.equals(container)) {
+			first= ancestor;
+		}
+		if (!first.getParent().equals(container)) {
+			return folder;
+		}
+		return first.equals(folder) ? folder : new FoldedResourceFolder(parent, first, folder);
+	}
+
+	private static void removePhysicalPackageFolders(Object[] javaElements, Set<Object> proposedChildren) {
+		for (Object child : List.copyOf(proposedChildren)) {
+			if (child instanceof IFolder folder && isRepresentedByPackage(javaElements, folder)) {
+				proposedChildren.remove(folder);
+			}
+		}
+	}
+
+	private static boolean isRepresentedByPackage(Object[] javaElements, IFolder folder) {
+		for (Object element : javaElements) {
+			if (element instanceof IPackageFragment fragment && fragment.getResource() instanceof IResource resource
+					&& folder.getFullPath().isPrefixOf(resource.getFullPath())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private IFolder getFoldedResourceFolder(IFolder folder) throws CoreException {
+		IFolder child;
+		while (!isPackageFragmentRoot(folder) && (child= getSingleVisibleResourceFolderChild(folder)) != null) {
+			folder= child;
+		}
+		return folder;
+	}
+
+	private static boolean isPackageFragmentRoot(IFolder folder) {
+		IJavaElement javaElement= JavaCore.create(folder);
+		return javaElement instanceof IPackageFragmentRoot && javaElement.exists();
+	}
+
+	private IFolder getSingleVisibleResourceFolderChild(IFolder folder) throws CoreException {
+		IFolder result= null;
+		for (IResource child : folder.members()) {
+			if (isVisible(folder, child)) {
+				if (!(child instanceof IFolder childFolder) || result != null) {
+					return null;
+				}
+				result= childFolder;
+			}
+		}
+		return result;
 	}
 
 

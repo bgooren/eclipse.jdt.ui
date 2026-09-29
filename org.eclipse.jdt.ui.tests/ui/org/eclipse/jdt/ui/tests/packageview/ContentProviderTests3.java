@@ -22,6 +22,11 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +36,7 @@ import org.eclipse.jdt.testplugin.JavaProjectHelper;
 import org.eclipse.jdt.testplugin.JavaTestPlugin;
 
 import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.Platform;
 
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IFolder;
@@ -39,12 +45,17 @@ import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.IWorkspaceDescription;
 import org.eclipse.core.resources.ResourcesPlugin;
 
+import org.eclipse.debug.ui.actions.ILaunchable;
+
 import org.eclipse.jface.viewers.ITreeContentProvider;
 
 import org.eclipse.ui.IViewPart;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.PlatformUI;
+import org.eclipse.ui.model.IWorkbenchAdapter;
+import org.eclipse.ui.navigator.ICommonContentExtensionSite;
+import org.eclipse.ui.navigator.IExtensionStateModel;
 
 import org.eclipse.jdt.core.ElementChangedEvent;
 import org.eclipse.jdt.core.ICompilationUnit;
@@ -54,8 +65,13 @@ import org.eclipse.jdt.core.IJavaElementDelta;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IPackageFragmentRoot;
+import org.eclipse.jdt.core.JavaCore;
+
+import org.eclipse.jdt.ui.JavaElementComparator;
 
 import org.eclipse.jdt.internal.ui.filters.NamePatternFilter;
+import org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder;
+import org.eclipse.jdt.internal.ui.navigator.JavaNavigatorContentProvider;
 import org.eclipse.jdt.internal.ui.packageview.PackageExplorerContentProvider;
 import org.eclipse.jdt.internal.ui.packageview.PackageExplorerLabelProvider;
 import org.eclipse.jdt.internal.ui.util.CoreUtility;
@@ -205,6 +221,90 @@ public class ContentProviderTests3{
 		Object[] children= fProvider.getChildren(root);
 
 		assertTrue(compareArrays(children, new Object[] { top }), "Resource folder was folded while folding was disabled"); //$NON-NLS-1$
+	}
+
+	@Test
+	public void testFoldResourceFoldersInProjectExplorer() throws Exception {
+		IFolder root= fJProject2.getProject().getFolder("projectExplorerResources"); //$NON-NLS-1$
+		root.create(true, true, null);
+		IFolder src= createFolderHierarchy(root, "src"); //$NON-NLS-1$
+		IFolder main= createFolderHierarchy(src, "main"); //$NON-NLS-1$
+		IFolder java= createFolderHierarchy(main, "java"); //$NON-NLS-1$
+		IFolder eu= createFolderHierarchy(java, "eu"); //$NON-NLS-1$
+		IFolder javaPackageLeaf= createFolderHierarchy(eu, "deldo", "webhosting"); //$NON-NLS-1$ //$NON-NLS-2$
+		javaPackageLeaf.getFile("Example.java").create(new ByteArrayInputStream( //$NON-NLS-1$
+				"package eu.deldo.webhosting; class Example {}".getBytes(StandardCharsets.UTF_8)), true, null); //$NON-NLS-1$
+		IFolder resources= createFolderHierarchy(main, "resources"); //$NON-NLS-1$
+		IFile configFile= resources.getFile("caffeine-jcache.conf"); //$NON-NLS-1$
+		configFile.create(new ByteArrayInputStream(new byte[0]), true, null);
+		IFolder db= createFolderHierarchy(resources, "db"); //$NON-NLS-1$
+		IFolder migration= createFolderHierarchy(db, "migration"); //$NON-NLS-1$
+		migration.getFile("V1.sql").create(new ByteArrayInputStream(new byte[0]), true, null); //$NON-NLS-1$
+		IFolder webapp= createFolderHierarchy(main, "webapp"); //$NON-NLS-1$
+		JavaProjectHelper.addSourceContainer(fJProject2, java.getProjectRelativePath().toString());
+		JavaProjectHelper.addSourceContainer(fJProject2, resources.getProjectRelativePath().toString(), new Path[0],
+				new Path[] { new Path("**") }); //$NON-NLS-1$
+		JavaNavigatorContentProvider provider= createJavaNavigatorContentProvider();
+		try {
+			Set<Object> children= new LinkedHashSet<>();
+			children.add(src);
+
+			provider.getPipelinedChildren(root, children);
+
+			assertEquals(1, children.size(), "Folded folder did not replace its generic resource ancestor"); //$NON-NLS-1$
+			FoldedResourceFolder foldedMain= (FoldedResourceFolder) children.iterator().next();
+			assertEquals(main, foldedMain.getAdapter(IFolder.class), "Folded folder adapted to the wrong resource"); //$NON-NLS-1$
+			assertEquals("src/main", foldedMain.toString(), "Wrong folded Project Explorer label"); //$NON-NLS-1$ //$NON-NLS-2$
+			assertEquals(root, provider.getPipelinedParent(foldedMain, null), "Wrong folded Project Explorer parent"); //$NON-NLS-1$
+
+			children= new LinkedHashSet<>(Set.of(provider.getChildren(foldedMain)));
+
+			assertEquals(Set.of(java, resources, webapp), children, "Project Explorer children were folded inconsistently"); //$NON-NLS-1$
+
+			children= new LinkedHashSet<>(Set.of(eu));
+			provider.getPipelinedChildren(java, children);
+
+			assertEquals(Set.of(JavaCore.create(javaPackageLeaf)), children,
+					"Physical package hierarchy leaked beside its Java package"); //$NON-NLS-1$
+
+			children= new LinkedHashSet<>(Set.of(db, configFile));
+			provider.getPipelinedChildren(resources, children);
+
+			FoldedResourceFolder physicalMigration= children.stream()
+					.filter(FoldedResourceFolder.class::isInstance)
+					.map(FoldedResourceFolder.class::cast)
+					.findFirst()
+					.orElseThrow();
+			assertEquals(Set.of(physicalMigration, configFile), children, "Physical resource hierarchy was not folded"); //$NON-NLS-1$
+			assertEquals(migration, physicalMigration.getAdapter(IFolder.class), "Physical fold adapted to the wrong folder"); //$NON-NLS-1$
+			assertEquals("db/migration", physicalMigration.toString(), "Wrong physical folded-folder label"); //$NON-NLS-1$ //$NON-NLS-2$
+			assertEquals(resources, provider.getPipelinedParent(physicalMigration, null), "Wrong physical folded-folder parent"); //$NON-NLS-1$
+			JavaElementComparator comparator= new JavaElementComparator();
+			assertEquals(comparator.category(db), comparator.category(physicalMigration),
+					"Folded resource folder was not sorted as a folder"); //$NON-NLS-1$
+			assertTrue(comparator.compare(fMyPart.getTreeViewer(), physicalMigration, configFile) < 0,
+					"Folded resource folder was sorted after a file"); //$NON-NLS-1$
+			assertEquals("db/migration", physicalMigration.getAdapter(IWorkbenchAdapter.class) //$NON-NLS-1$
+					.getLabel(physicalMigration), "Workbench adapter lost the folded path label"); //$NON-NLS-1$
+			assertTrue(Platform.getAdapterManager().hasAdapter(physicalMigration, ILaunchable.class.getName()),
+					"Folded resource folder was not considered launchable"); //$NON-NLS-1$
+
+			IPackageFragmentRoot resourceRoot= (IPackageFragmentRoot) JavaCore.create(resources);
+			Object[] javaResourceChildren= provider.getChildren(resourceRoot);
+			FoldedResourceFolder javaMigration= Arrays.stream(javaResourceChildren)
+					.filter(FoldedResourceFolder.class::isInstance)
+					.map(FoldedResourceFolder.class::cast)
+					.findFirst()
+					.orElseThrow();
+			assertEquals(Set.of(javaMigration, configFile), Set.of(javaResourceChildren),
+					"Resource folder was no longer folded in the Java Resources projection"); //$NON-NLS-1$
+			assertEquals(migration, javaMigration.getAdapter(IFolder.class), "Java Resources fold adapted to the wrong folder"); //$NON-NLS-1$
+			assertEquals("db/migration", javaMigration.toString(), "Wrong Java Resources folded-folder label"); //$NON-NLS-1$ //$NON-NLS-2$
+			assertEquals(resourceRoot, provider.getPipelinedParent(javaMigration, null), "Wrong Java Resources folded-folder parent"); //$NON-NLS-1$
+			assertFalse(physicalMigration.equals(javaMigration), "Physical and Java Resources folds shared their identity"); //$NON-NLS-1$
+		} finally {
+			provider.dispose();
+		}
 	}
 
 	@Test
@@ -466,6 +566,23 @@ public class ContentProviderTests3{
 				"src/main/resources", //$NON-NLS-1$
 				new Path[0],
 				new Path[] { new Path("**") }); //$NON-NLS-1$
+	}
+
+	private JavaNavigatorContentProvider createJavaNavigatorContentProvider() {
+		IExtensionStateModel stateModel= (IExtensionStateModel) Proxy.newProxyInstance(
+				getClass().getClassLoader(), new Class<?>[] { IExtensionStateModel.class },
+				(proxy, method, args) -> method.getReturnType() == boolean.class ? false : null);
+		ICommonContentExtensionSite site= (ICommonContentExtensionSite) Proxy.newProxyInstance(
+				getClass().getClassLoader(), new Class<?>[] { ICommonContentExtensionSite.class },
+				(proxy, method, args) -> "getExtensionStateModel".equals(method.getName()) ? stateModel : null); //$NON-NLS-1$
+		JavaNavigatorContentProvider provider= new JavaNavigatorContentProvider() {
+			@Override
+			protected boolean isResourceFolderFoldingEnabled() {
+				return true;
+			}
+		};
+		provider.init(site);
+		return provider;
 	}
 
 	private IFolder createFolderHierarchy(IFolder parent, String... segments) throws Exception {

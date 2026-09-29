@@ -13,7 +13,12 @@
  *******************************************************************************/
 package org.eclipse.jdt.internal.ui.navigator;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.jface.action.IMenuManager;
+import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.jface.viewers.StructuredSelection;
 
 import org.eclipse.ui.IActionBars;
 import org.eclipse.ui.IViewPart;
@@ -104,14 +109,29 @@ public class JavaNavigatorActionProvider extends CommonActionProvider {
 
 	@Override
 	public void setContext(ActionContext context) {
-		super.setContext(context);
+		ActionContext resourceContext= toResourceContext(context);
+		super.setContext(resourceContext);
 		if (fInViewPart) {
-			fOpenViewGroup.setContext(context);
-			fCCPGroup.setContext(context);
-			fGenerateGroup.setContext(context);
-			fSearchGroup.setContext(context);
-			fBuildPathGroup.setContext(context);
+			fOpenViewGroup.setContext(resourceContext);
+			fCCPGroup.setContext(resourceContext);
+			fGenerateGroup.setContext(resourceContext);
+			fSearchGroup.setContext(resourceContext);
+			fBuildPathGroup.setContext(resourceContext);
 		}
+	}
+
+	static ActionContext toResourceContext(ActionContext context) {
+		if (!(context.getSelection() instanceof IStructuredSelection selection)
+				|| selection.toList().stream().noneMatch(FoldedResourceFolder.class::isInstance)) {
+			return context;
+		}
+		List<Object> elements= new ArrayList<>(selection.size());
+		for (Object element : selection) {
+			elements.add(element instanceof FoldedResourceFolder folded ? folded.getFolder() : element);
+		}
+		ActionContext resourceContext= new ActionContext(new StructuredSelection(elements));
+		resourceContext.setInput(context.getInput());
+		return resourceContext;
 	}
 
 	/*
