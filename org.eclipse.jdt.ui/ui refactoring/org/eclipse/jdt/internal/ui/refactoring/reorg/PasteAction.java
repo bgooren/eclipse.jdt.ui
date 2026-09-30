@@ -61,6 +61,7 @@ import org.eclipse.jface.operation.IRunnableContext;
 import org.eclipse.jface.operation.IRunnableWithProgress;
 import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.jface.viewers.ISelection;
 
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.Document;
@@ -164,6 +165,7 @@ import org.eclipse.jdt.internal.ui.IJavaStatusConstants;
 import org.eclipse.jdt.internal.ui.JavaPlugin;
 import org.eclipse.jdt.internal.ui.JavaUIMessages;
 import org.eclipse.jdt.internal.ui.javaeditor.EditorUtility;
+import org.eclipse.jdt.internal.ui.navigator.FoldedResourceSelectionProvider;
 import org.eclipse.jdt.internal.ui.refactoring.RefactoringExecutionHelper;
 import org.eclipse.jdt.internal.ui.refactoring.RefactoringMessages;
 import org.eclipse.jdt.internal.ui.util.BusyIndicatorRunnableContext;
@@ -252,6 +254,13 @@ public class PasteAction extends SelectionDispatchAction{
 
 	@Override
 	public void run(IStructuredSelection selection) {
+		if (getSelectionProvider() instanceof FoldedResourceSelectionProvider foldedProvider) {
+			ISelection leafSelection= FoldedResourceSelectionProvider.toLeafResourceSelection(
+					foldedProvider.getViewerSelection());
+			if (leafSelection instanceof IStructuredSelection structured) {
+				selection= structured;
+			}
+		}
 		Clipboard clipboard;
 		if (fClipboard != null)
 			clipboard= fClipboard;

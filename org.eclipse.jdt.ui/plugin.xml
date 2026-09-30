@@ -6488,6 +6488,14 @@
  				</possibleDropTargets>
  			</dropAssistant>
 		</navigatorContent>
+		<commonFilter
+				activeByDefault="true"
+				class="org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolderFilter"
+				description="%FoldedResourceFolderFilter.description"
+				id="org.eclipse.jdt.java.ui.filters.FoldedResourceFolderFilter"
+				name="%FoldedResourceFolderFilter.name"
+				visibleInUI="false">
+		</commonFilter>
   		<commonFilter
 		        activeByDefault="false"
 		        class="org.eclipse.jdt.internal.ui.navigator.NonEssentialEmptyPackageFilter"

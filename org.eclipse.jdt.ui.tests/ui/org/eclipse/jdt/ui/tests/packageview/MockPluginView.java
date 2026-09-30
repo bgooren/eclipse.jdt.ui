@@ -44,6 +44,7 @@ public class MockPluginView extends PackageExplorerPart {
 
 	private boolean fRemoveHappened;
 	private boolean fAddHappened;
+	private boolean fCollapseOnRefresh;
 
 	private final List<Object> fRefreshedObjects;
 	private final List<Object> fRemovedObjects;
@@ -117,12 +118,18 @@ public class MockPluginView extends PackageExplorerPart {
 		public void refresh(Object object){
 			fRefreshHappened= true;
 			fRefreshedObjects.add(object);
+			if (fCollapseOnRefresh) {
+				collapseAll();
+			}
 		}
 
 		@Override
 		public void refresh(final Object element, final boolean updateLabels) {
 			fRefreshHappened= true;
 			fRefreshedObjects.add(element);
+			if (fCollapseOnRefresh) {
+				collapseAll();
+			}
 		}
 
 		@Override
@@ -156,6 +163,10 @@ public class MockPluginView extends PackageExplorerPart {
 
 	public List<Object> getRefreshedObject(){
 		return fRefreshedObjects;
+	}
+
+	public void setCollapseOnRefresh(boolean collapseOnRefresh) {
+		fCollapseOnRefresh= collapseOnRefresh;
 	}
 
 	/**

@@ -38,6 +38,10 @@ public final class FoldedResourceSelectionProvider implements ISelectionProvider
 		fDelegate= delegate;
 	}
 
+	public ISelection getViewerSelection() {
+		return fDelegate.getSelection();
+	}
+
 	@Override
 	public void addSelectionChangedListener(ISelectionChangedListener listener) {
 		if (fListeners.containsKey(listener)) {
@@ -67,14 +71,24 @@ public final class FoldedResourceSelectionProvider implements ISelectionProvider
 		fDelegate.setSelection(selection);
 	}
 
-	static ISelection toResourceSelection(ISelection selection) {
+	public static ISelection toResourceSelection(ISelection selection) {
+		return toResourceSelection(selection, false);
+	}
+
+	public static ISelection toLeafResourceSelection(ISelection selection) {
+		return toResourceSelection(selection, true);
+	}
+
+	private static ISelection toResourceSelection(ISelection selection, boolean leaf) {
 		if (!(selection instanceof IStructuredSelection structuredSelection)
 				|| structuredSelection.toList().stream().noneMatch(FoldedResourceFolder.class::isInstance)) {
 			return selection;
 		}
 		List<Object> elements= new ArrayList<>(structuredSelection.size());
 		for (Object element : structuredSelection) {
-			elements.add(element instanceof FoldedResourceFolder folded ? folded.getFirstFolder() : element);
+			elements.add(element instanceof FoldedResourceFolder folded
+					? leaf ? folded.getFolder() : folded.getFirstFolder()
+					: element);
 		}
 		return new StructuredSelection(elements);
 	}

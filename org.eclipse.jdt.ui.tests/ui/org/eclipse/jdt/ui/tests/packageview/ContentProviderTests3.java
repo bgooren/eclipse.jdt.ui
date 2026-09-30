@@ -27,6 +27,7 @@ import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -40,6 +41,7 @@ import org.eclipse.jdt.testplugin.JavaTestPlugin;
 
 import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.NullProgressMonitor;
 
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IContainer;
@@ -57,6 +59,7 @@ import org.eclipse.jface.viewers.ITreeContentProvider;
 import org.eclipse.jface.viewers.SelectionChangedEvent;
 import org.eclipse.jface.viewers.StructuredSelection;
 import org.eclipse.jface.viewers.TreePath;
+import org.eclipse.jface.viewers.ViewerFilter;
 
 import org.eclipse.ui.IViewPart;
 import org.eclipse.ui.IWorkbench;
@@ -69,6 +72,7 @@ import org.eclipse.ui.navigator.IExtensionStateModel;
 import org.eclipse.ui.navigator.INavigatorContentService;
 import org.eclipse.ui.navigator.NavigatorContentServiceFactory;
 import org.eclipse.ui.navigator.PipelinedShapeModification;
+import org.eclipse.ui.part.FileEditorInput;
 
 import org.eclipse.jdt.core.ElementChangedEvent;
 import org.eclipse.jdt.core.ICompilationUnit;
@@ -85,9 +89,12 @@ import org.eclipse.jdt.ui.JavaElementComparator;
 import org.eclipse.jdt.internal.ui.actions.SimpleSelectionProvider;
 import org.eclipse.jdt.internal.ui.filters.NamePatternFilter;
 import org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder;
+import org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolderFilter;
+import org.eclipse.jdt.internal.ui.navigator.FoldedResourceRenameOperation;
 import org.eclipse.jdt.internal.ui.navigator.FoldedResourceSelectionProvider;
 import org.eclipse.jdt.internal.ui.navigator.JavaNavigatorActionProvider;
 import org.eclipse.jdt.internal.ui.navigator.JavaNavigatorContentProvider;
+import org.eclipse.jdt.internal.ui.navigator.JavaFileLinkHelper;
 import org.eclipse.jdt.internal.ui.navigator.JavaNavigatorLabelProvider;
 import org.eclipse.jdt.internal.ui.packageview.PackageExplorerContentProvider;
 import org.eclipse.jdt.internal.ui.packageview.PackageExplorerLabelProvider;
@@ -248,10 +255,10 @@ public class ContentProviderTests3{
 		IFolder main= createFolderHierarchy(src, "main"); //$NON-NLS-1$
 		IFolder java= createFolderHierarchy(main, "java"); //$NON-NLS-1$
 		IFolder eu= createFolderHierarchy(java, "eu"); //$NON-NLS-1$
-		IFolder javaPackageLeaf= createFolderHierarchy(eu, "deldo", "webhosting"); //$NON-NLS-1$ //$NON-NLS-2$
+		IFolder javaPackageLeaf= createFolderHierarchy(eu, "example", "application"); //$NON-NLS-1$ //$NON-NLS-2$
 		IFile javaFile= javaPackageLeaf.getFile("Example.java"); //$NON-NLS-1$
 		javaFile.create(new ByteArrayInputStream(
-				"package eu.deldo.webhosting; class Example {}".getBytes(StandardCharsets.UTF_8)), true, null); //$NON-NLS-1$
+				"package eu.example.application; class Example {}".getBytes(StandardCharsets.UTF_8)), true, null); //$NON-NLS-1$
 		IFolder resources= createFolderHierarchy(main, "resources"); //$NON-NLS-1$
 		IFile configFile= resources.getFile("caffeine-jcache.conf"); //$NON-NLS-1$
 		configFile.create(new ByteArrayInputStream(new byte[0]), true, null);
@@ -264,11 +271,39 @@ public class ContentProviderTests3{
 		IFolder nested= createFolderHierarchy(loose, "nested"); //$NON-NLS-1$
 		IFolder leaf= createFolderHierarchy(nested, "leaf"); //$NON-NLS-1$
 		leaf.getFile("content.txt").create(new ByteArrayInputStream(new byte[0]), true, null); //$NON-NLS-1$
+		IFolder emptyFirst= createFolderHierarchy(root, "empty"); //$NON-NLS-1$
+		createFolderHierarchy(emptyFirst, "leaf"); //$NON-NLS-1$
+		IFolder alphaFirst= createFolderHierarchy(root, "alpha"); //$NON-NLS-1$
+		IFolder alphaLeaf= createFolderHierarchy(alphaFirst, "zulu"); //$NON-NLS-1$
+		alphaLeaf.getFile("content.txt").create(new ByteArrayInputStream(new byte[0]), true, null); //$NON-NLS-1$
+		IFolder betaFirst= createFolderHierarchy(root, "bravo"); //$NON-NLS-1$
+		IFolder betaLeaf= createFolderHierarchy(betaFirst, "alpha"); //$NON-NLS-1$
+		betaLeaf.getFile("content.txt").create(new ByteArrayInputStream(new byte[0]), true, null); //$NON-NLS-1$
 		JavaProjectHelper.addSourceContainer(fJProject2, java.getProjectRelativePath().toString());
-		JavaProjectHelper.addSourceContainer(fJProject2, resources.getProjectRelativePath().toString(), new Path[0],
+		IPackageFragmentRoot resourceRoot= JavaProjectHelper.addSourceContainer(fJProject2,
+				resources.getProjectRelativePath().toString(), new Path[0],
 				new Path[] { new Path("**") }); //$NON-NLS-1$
 		JavaNavigatorContentProvider provider= createJavaNavigatorContentProvider();
 		try {
+			fMyPart.getTreeViewer().setInput(root);
+			provider.inputChanged(fMyPart.getTreeViewer(), null, root);
+			fMyPart.getTreeViewer().expandAll();
+			TreePath[] expandedPaths= fMyPart.getTreeViewer().getExpandedTreePaths();
+			assertTrue(expandedPaths.length > 0, "Test viewer did not contain an expanded path"); //$NON-NLS-1$
+			fMyPart.setCollapseOnRefresh(true);
+			fMyPart.clear();
+			fMyPart.getTreeViewer().getControl().getDisplay().asyncExec(fMyPart.getTreeViewer()::collapseAll);
+			provider.interceptRemove(new PipelinedShapeModification(null,
+					new LinkedHashSet<>(Set.of(db))));
+			while (fMyPart.getTreeViewer().getControl().getDisplay().readAndDispatch()) {
+				// Process the asynchronously scheduled fold refresh.
+			}
+			assertTrue(fMyPart.wasObjectRefreshed(root),
+					"A shape change without a parent did not refresh the viewer input"); //$NON-NLS-1$
+			assertEquals(List.of(expandedPaths), List.of(fMyPart.getTreeViewer().getExpandedTreePaths()),
+					"Fold refresh did not preserve the expanded tree paths"); //$NON-NLS-1$
+			fMyPart.setCollapseOnRefresh(false);
+
 			Set<Object> additions= new LinkedHashSet<>(Set.of(loose));
 			provider.interceptAdd(new PipelinedShapeModification(root, additions));
 			assertEquals(1, additions.size(), "Incremental addition retained the unfolded resource folder"); //$NON-NLS-1$
@@ -276,6 +311,28 @@ public class ContentProviderTests3{
 					"Incremental addition did not fold the resource folder"); //$NON-NLS-1$
 			assertEquals("loose/nested/leaf", additions.iterator().next().toString(), //$NON-NLS-1$
 					"Incremental addition produced the wrong folded path"); //$NON-NLS-1$
+
+			Set<Object> scheduledRefreshes= new LinkedHashSet<>();
+			JavaNavigatorContentProvider trackingProvider= new JavaNavigatorContentProvider() {
+				@Override
+				protected boolean isResourceFolderFoldingEnabled() {
+					return true;
+				}
+
+				@Override
+				protected void scheduleFoldRefresh(Object parent) {
+					scheduledRefreshes.add(parent);
+				}
+			};
+			trackingProvider.interceptAdd(new PipelinedShapeModification(resources,
+					new LinkedHashSet<>(Set.of(db))));
+			assertEquals(Set.of(resources, resourceRoot), scheduledRefreshes,
+					"Adding a resource did not refresh both physical and Java projections"); //$NON-NLS-1$
+			scheduledRefreshes.clear();
+			trackingProvider.interceptRemove(new PipelinedShapeModification(resources,
+					new LinkedHashSet<>(Set.of(db))));
+			assertEquals(Set.of(resources, resourceRoot), scheduledRefreshes,
+					"Removing a resource did not refresh both physical and Java projections"); //$NON-NLS-1$
 
 			Set<Object> children= new LinkedHashSet<>();
 			children.add(src);
@@ -311,26 +368,70 @@ public class ContentProviderTests3{
 					.findFirst()
 					.orElseThrow();
 			assertEquals(Set.of(physicalMigration, configFile), children, "Physical resource hierarchy was not folded"); //$NON-NLS-1$
-			assertEquals(migration, physicalMigration.getAdapter(IFolder.class), "Physical fold adapted to the wrong folder"); //$NON-NLS-1$
+			assertEquals(migration, physicalMigration.getAdapter(IFolder.class), "Physical fold did not adapt to its leaf folder"); //$NON-NLS-1$
 			assertNull(physicalMigration.getAdapter(IContainer.class),
 					"Physical fold leaked into generic container content extensions"); //$NON-NLS-1$
-			assertNull(physicalMigration.getAdapter(IResource.class),
-					"Physical fold leaked into generic resource content extensions"); //$NON-NLS-1$
+			assertEquals(migration, physicalMigration.getAdapter(IResource.class),
+					"Resource actions did not receive the folded folder's leaf resource"); //$NON-NLS-1$
 			assertEquals("db/migration", physicalMigration.toString(), "Wrong physical folded-folder label"); //$NON-NLS-1$ //$NON-NLS-2$
 			assertEquals(resources, provider.getPipelinedParent(physicalMigration, null), "Wrong physical folded-folder parent"); //$NON-NLS-1$
+
+			Set<Object> directChildren= new LinkedHashSet<>(Arrays.asList(provider.getChildren(resources)));
+			assertEquals(Set.of(configFile), directChildren,
+					"Java content contribution retained the unfolded resource folder"); //$NON-NLS-1$
+			directChildren.addAll(children);
+			assertEquals(Set.of(physicalMigration, configFile), directChildren,
+					"First-class and pipelined content produced duplicate resource folders"); //$NON-NLS-1$
+
+			ViewerFilter foldedFolderFilter= new FoldedResourceFolderFilter();
+			Object[] mergedChildren= foldedFolderFilter.filter(fMyPart.getTreeViewer(),
+					new TreePath(new Object[] { root, src, main, resources }), //
+					new Object[] { physicalMigration, db, configFile });
+			assertEquals(Set.of(physicalMigration, configFile), Set.of(mergedChildren),
+					"A later content extension reintroduced the unfolded resource folder"); //$NON-NLS-1$
+
 			assertEquals(physicalMigration, provider.getPipelinedParent(migrationFile, migration),
 					"Link with Editor could not reconstruct the folded physical parent"); //$NON-NLS-1$
+			assertEquals(new StructuredSelection(migrationFile),
+					new JavaFileLinkHelper().findSelection(new FileEditorInput(migrationFile)),
+					"Link with Editor did not select a non-Java resource"); //$NON-NLS-1$
 			JavaElementComparator comparator= new JavaElementComparator();
 			assertEquals(comparator.category(db), comparator.category(physicalMigration),
 					"Folded resource folder was not sorted as a folder"); //$NON-NLS-1$
 			assertTrue(comparator.compare(fMyPart.getTreeViewer(), physicalMigration, configFile) < 0,
 					"Folded resource folder was sorted after a file"); //$NON-NLS-1$
+
+			Set<Object> sortedFolds= new LinkedHashSet<>(Set.of(alphaFirst, betaFirst));
+			provider.getPipelinedChildren(root, sortedFolds);
+			FoldedResourceFolder alphaFold= sortedFolds.stream()
+					.filter(FoldedResourceFolder.class::isInstance)
+					.map(FoldedResourceFolder.class::cast)
+					.filter(folder -> folder.toString().equals("alpha/zulu")) //$NON-NLS-1$
+					.findFirst()
+					.orElseThrow();
+			FoldedResourceFolder betaFold= sortedFolds.stream()
+					.filter(FoldedResourceFolder.class::isInstance)
+					.map(FoldedResourceFolder.class::cast)
+					.filter(folder -> folder.toString().equals("bravo/alpha")) //$NON-NLS-1$
+					.findFirst()
+					.orElseThrow();
+			assertTrue(comparator.compare(fMyPart.getTreeViewer(), alphaFold, betaFold) < 0,
+					"Folded folders were sorted by their leaf names instead of their full labels"); //$NON-NLS-1$
+
+			Set<Object> emptyFoldChildren= new LinkedHashSet<>(Set.of(emptyFirst));
+			provider.getPipelinedChildren(root, emptyFoldChildren);
+			FoldedResourceFolder emptyFold= (FoldedResourceFolder) emptyFoldChildren.iterator().next();
+			assertFalse(provider.hasChildren(emptyFold), "Empty folded folder reported children"); //$NON-NLS-1$
+			assertEquals(0, provider.getChildren(emptyFold).length, "Empty folded folder returned children"); //$NON-NLS-1$
 			INavigatorContentService contentService= NavigatorContentServiceFactory.INSTANCE
 					.createContentService("org.eclipse.ui.navigator.ProjectExplorer"); //$NON-NLS-1$
 			try {
 				contentService.getActivationService().activateExtensions(new String[] {
 						"org.eclipse.jdt.java.ui.javaContent", //$NON-NLS-1$
 						"org.eclipse.ui.navigator.resources.nested.nestedProjectContentProvider" }, false); //$NON-NLS-1$
+				assertTrue(Arrays.stream(contentService.getFilterService().getVisibleFilters(true)) //
+						.anyMatch(FoldedResourceFolderFilter.class::isInstance),
+						"Common Navigator did not activate the folded resource-folder filter"); //$NON-NLS-1$
 				assertEquals("db/migration", new JavaNavigatorLabelProvider().getText(physicalMigration), //$NON-NLS-1$
 						"Java content extension lost the folded path label"); //$NON-NLS-1$
 				CommonViewerComparator commonComparator= new CommonViewerComparator();
@@ -339,6 +440,8 @@ public class ContentProviderTests3{
 				assertTrue(commonComparator.compare(fMyPart.getTreeViewer(), parentPath,
 						fJProject1.getProject(), physicalMigration) < 0,
 						"Common Navigator sorted a folded folder before a nested project"); //$NON-NLS-1$
+				assertTrue(commonComparator.compare(fMyPart.getTreeViewer(), parentPath, alphaFold, betaFold) < 0,
+						"Common Navigator sorted folded folders by their leaf names"); //$NON-NLS-1$
 			} finally {
 				contentService.dispose();
 			}
@@ -347,7 +450,6 @@ public class ContentProviderTests3{
 			assertTrue(Platform.getAdapterManager().hasAdapter(physicalMigration, ILaunchable.class.getName()),
 					"Folded resource folder was not considered launchable"); //$NON-NLS-1$
 
-			IPackageFragmentRoot resourceRoot= (IPackageFragmentRoot) JavaCore.create(resources);
 			Object[] javaResourceChildren= provider.getChildren(resourceRoot);
 			FoldedResourceFolder javaMigration= Arrays.stream(javaResourceChildren)
 					.filter(FoldedResourceFolder.class::isInstance)
@@ -356,10 +458,14 @@ public class ContentProviderTests3{
 					.orElseThrow();
 			assertEquals(Set.of(javaMigration, configFile), Set.of(javaResourceChildren),
 					"Resource folder was no longer folded in the Java Resources projection"); //$NON-NLS-1$
-			assertEquals(migration, javaMigration.getAdapter(IFolder.class), "Java Resources fold adapted to the wrong folder"); //$NON-NLS-1$
+			assertEquals(migration, javaMigration.getAdapter(IFolder.class), "Java Resources fold did not adapt to its leaf folder"); //$NON-NLS-1$
 			assertEquals("db/migration", javaMigration.toString(), "Wrong Java Resources folded-folder label"); //$NON-NLS-1$ //$NON-NLS-2$
 			assertEquals(resourceRoot, provider.getPipelinedParent(javaMigration, null), "Wrong Java Resources folded-folder parent"); //$NON-NLS-1$
 			assertFalse(physicalMigration.equals(javaMigration), "Physical and Java Resources folds shared their identity"); //$NON-NLS-1$
+			Set<Object> combinedResourceRootChildren= new LinkedHashSet<>(Set.of(db));
+			provider.getPipelinedChildren(resourceRoot, combinedResourceRootChildren);
+			assertEquals(Set.of(javaMigration, configFile), combinedResourceRootChildren,
+					"Generic and Java content providers produced duplicate folded resource folders"); //$NON-NLS-1$
 
 			SimpleSelectionProvider viewerSelectionProvider= new SimpleSelectionProvider();
 			viewerSelectionProvider.setSelection(new StructuredSelection(physicalMigration));
@@ -394,6 +500,31 @@ public class ContentProviderTests3{
 	public void testJavaNavigatorActionProviderAcceptsNullContext() {
 		JavaNavigatorActionProvider actionProvider= new JavaNavigatorActionProvider();
 		actionProvider.setContext(null);
+	}
+
+	@Test
+	public void testRenameCompleteFoldedResourcePath() throws Exception {
+		IFolder parent= fJProject2.getProject().getFolder("renameFold"); //$NON-NLS-1$
+		parent.create(true, true, null);
+		IFolder first= createFolderHierarchy(parent, "alpha"); //$NON-NLS-1$
+		IFolder leaf= createFolderHierarchy(first, "bravo", "charlie"); //$NON-NLS-1$ //$NON-NLS-2$
+		leaf.getFile("content.txt").create(new ByteArrayInputStream(new byte[0]), true, null); //$NON-NLS-1$
+		Path oldPath= new Path("alpha/bravo/charlie"); //$NON-NLS-1$
+		Path newPath= new Path("delta/echo/foxtrot"); //$NON-NLS-1$
+		FoldedResourceRenameOperation operation=
+				new FoldedResourceRenameOperation(parent, oldPath, newPath, "Rename folded folder"); //$NON-NLS-1$
+
+		assertTrue(FoldedResourceRenameOperation.validate(parent, oldPath, newPath).isOK());
+		assertTrue(operation.execute(new NullProgressMonitor(), null).isOK());
+		assertFalse(parent.getFolder(oldPath).exists(), "Old folded path still existed after rename"); //$NON-NLS-1$
+		assertTrue(parent.getFile(newPath.append("content.txt")).exists(), "Content was not moved with the folded path"); //$NON-NLS-1$ //$NON-NLS-2$
+
+		assertTrue(operation.undo(new NullProgressMonitor(), null).isOK());
+		assertTrue(parent.getFile(oldPath.append("content.txt")).exists(), "Undo did not restore the old folded path"); //$NON-NLS-1$ //$NON-NLS-2$
+		assertFalse(parent.getFolder(newPath).exists(), "Undo retained the renamed folded path"); //$NON-NLS-1$
+
+		assertTrue(operation.redo(new NullProgressMonitor(), null).isOK());
+		assertTrue(parent.getFile(newPath.append("content.txt")).exists(), "Redo did not restore the renamed folded path"); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
 	@Test
@@ -485,15 +616,7 @@ public class ContentProviderTests3{
 		assertTrue(leaf.exists());
 		fMyPart.clear();
 
-		IResourceDelta resourceDelta= (IResourceDelta) Proxy.newProxyInstance(
-				getClass().getClassLoader(), new Class<?>[] { IResourceDelta.class },
-				(proxy, method, args) -> switch (method.getName()) {
-					case "getKind" -> IResourceDelta.ADDED; //$NON-NLS-1$
-					case "getResource" -> first; //$NON-NLS-1$
-					case "getAffectedChildren" -> new IResourceDelta[0]; //$NON-NLS-1$
-					case "getFlags" -> 0; //$NON-NLS-1$
-					default -> null;
-				});
+		IResourceDelta resourceDelta= createResourceDelta(first, IResourceDelta.ADDED);
 		TestDelta projectDelta= new TestDelta(IJavaElementDelta.CHANGED, fJProject2);
 		projectDelta.setResourceDeltas(new IResourceDelta[] { resourceDelta });
 		TestDelta modelDelta= new TestDelta(IJavaElementDelta.CHANGED, fJProject2.getJavaModel());
@@ -503,6 +626,36 @@ public class ContentProviderTests3{
 
 		assertFalse(fMyPart.hasAddHappened(), "Foldable top-level folder was added without recomputing folding"); //$NON-NLS-1$
 		assertTrue(fMyPart.wasObjectRefreshed(fJProject2), "Java project was not refreshed"); //$NON-NLS-1$
+	}
+
+	@Test
+	public void testRemoveTopLevelFoldedResourceRefreshesProject() throws Exception {
+		IFolder first= fJProject2.getProject().getFolder("outputs"); //$NON-NLS-1$
+		first.create(true, true, null);
+		createFolderHierarchy(first, "result"); //$NON-NLS-1$
+		fMyPart.clear();
+
+		TestDelta projectDelta= new TestDelta(IJavaElementDelta.CHANGED, fJProject2);
+		projectDelta.setResourceDeltas(new IResourceDelta[] {
+				createResourceDelta(first, IResourceDelta.REMOVED) });
+		TestDelta modelDelta= new TestDelta(IJavaElementDelta.CHANGED, fJProject2.getJavaModel());
+		modelDelta.setAffectedChildren(new IJavaElementDelta[] { projectDelta });
+
+		sendEvent(modelDelta);
+
+		assertTrue(fMyPart.wasObjectRefreshed(fJProject2), "Removing a folded folder did not refresh the Java project"); //$NON-NLS-1$
+	}
+
+	private IResourceDelta createResourceDelta(IResource resource, int kind) {
+		return (IResourceDelta) Proxy.newProxyInstance(
+				getClass().getClassLoader(), new Class<?>[] { IResourceDelta.class },
+				(proxy, method, args) -> switch (method.getName()) {
+					case "getKind" -> kind; //$NON-NLS-1$
+					case "getResource" -> resource; //$NON-NLS-1$
+					case "getAffectedChildren" -> new IResourceDelta[0]; //$NON-NLS-1$
+					case "getFlags" -> 0; //$NON-NLS-1$
+					default -> null;
+				});
 	}
 
 	@Test

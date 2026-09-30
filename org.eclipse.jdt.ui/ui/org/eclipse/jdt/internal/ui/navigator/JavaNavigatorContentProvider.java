@@ -20,6 +20,7 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiPredicate;
 
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IAdaptable;
@@ -33,7 +34,10 @@ import org.eclipse.core.resources.IWorkspaceRoot;
 
 import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.jface.util.IPropertyChangeListener;
+import org.eclipse.jface.viewers.TreePath;
+import org.eclipse.jface.viewers.TreeViewer;
 import org.eclipse.jface.viewers.Viewer;
+import org.eclipse.jface.viewers.ViewerFilter;
 
 import org.eclipse.ui.IMemento;
 import org.eclipse.ui.navigator.ICommonContentExtensionSite;
@@ -67,10 +71,16 @@ public class JavaNavigatorContentProvider extends
 	}
 
 	public static final String JDT_EXTENSION_ID = "org.eclipse.jdt.java.ui.javaContent"; //$NON-NLS-1$
+	static final String VIEWER_PROPERTY = "org.eclipse.jdt.ui.navigator.viewer"; //$NON-NLS-1$
 
 	private IExtensionStateModel fStateModel;
 
 	private IPropertyChangeListener fLayoutPropertyListener;
+
+	private TreeViewer fViewer;
+	private final Set<Object> fPendingFoldRefreshTargets= new LinkedHashSet<>();
+	private TreePath[] fPendingExpandedPaths;
+	private boolean fFoldRefreshScheduled;
 
 	@Override
 	public void init(ICommonContentExtensionSite commonContentExtensionSite) {
@@ -107,11 +117,16 @@ public class JavaNavigatorContentProvider extends
 	@Override
 	public void dispose() {
 		super.dispose();
+		if (fStateModel.getProperty(VIEWER_PROPERTY) == fViewer) {
+			fStateModel.setProperty(VIEWER_PROPERTY, null);
+		}
 		fStateModel.removePropertyChangeListener(fLayoutPropertyListener);
 	}
 
 	@Override
 	public void inputChanged(Viewer viewer, Object oldInput, Object newInput) {
+		fViewer= (TreeViewer)viewer;
+		fStateModel.setProperty(VIEWER_PROPERTY, fViewer);
 		super.inputChanged(viewer, oldInput, findInputElement(newInput));
 	}
 
@@ -183,7 +198,13 @@ public class JavaNavigatorContentProvider extends
 			return super.getChildren(JavaCore.create((IProject)parentElement));
 		}
 		Object[] children= super.getChildren(parentElement);
-		return parentElement instanceof IJavaElement ? wrapFoldedFolders(parentElement, children) : children;
+		if (parentElement instanceof IJavaElement) {
+			return wrapFoldedFolders(parentElement, children);
+		}
+		if (parentElement instanceof IContainer && isResourceFolderFoldingEnabled()) {
+			return Arrays.stream(children).filter(child -> !(child instanceof IFolder)).toArray();
+		}
+		return children;
 	}
 
 	private Object[] wrapFoldedFolders(Object parent, Object[] children) {
@@ -193,7 +214,11 @@ public class JavaNavigatorContentProvider extends
 		Object[] wrapped= children.clone();
 		for (int i= 0; i < wrapped.length; i++) {
 			if (wrapped[i] instanceof IFolder folder) {
-				wrapped[i]= createFoldedFolder(parent, folder);
+				try {
+					wrapped[i]= createFoldedFolder(parent, getFoldedResourceFolder(folder));
+				} catch (CoreException e) {
+					// leave the original folder unfolded
+				}
 			}
 		}
 		return wrapped;
@@ -250,7 +275,7 @@ public class JavaNavigatorContentProvider extends
 		IContainer visibleParent= leafFolder.getParent();
 		try {
 			while (visibleParent instanceof IFolder parentFolder && !isPackageFragmentRoot(parentFolder)
-					&& firstFolder.equals(getSingleVisibleResourceFolderChild(parentFolder))) {
+					&& firstFolder.equals(getSingleVisibleResourceFolderChild(parentFolder, this::isVisible))) {
 				firstFolder= parentFolder;
 				visibleParent= parentFolder.getParent();
 			}
@@ -264,7 +289,9 @@ public class JavaNavigatorContentProvider extends
 	@Override
 	public PipelinedShapeModification interceptAdd(PipelinedShapeModification addModification) {
 
-		Object parent= addModification.getParent();
+		Object originalParent= addModification.getParent();
+		Object parent= originalParent;
+		boolean resourceShapeChanged= containsResource(addModification.getChildren());
 
 		if (parent instanceof IJavaProject) {
 			addModification.setParent(((IJavaProject)parent).getProject());
@@ -276,15 +303,100 @@ public class JavaNavigatorContentProvider extends
 
 		convertToJavaElements(addModification);
 		foldPipelinedResourceFolders(addModification.getParent(), addModification.getChildren());
+		if (resourceShapeChanged && isResourceFolderFoldingEnabled()) {
+			scheduleFoldRefresh(originalParent);
+			if (!originalParent.equals(addModification.getParent())) {
+				scheduleFoldRefresh(addModification.getParent());
+			}
+		}
 		return addModification;
+	}
+
+	/**
+	 * Refreshes the smallest stable parent after an incremental addition changes a
+	 * folder into a folded chain. The resource content provider may already have
+	 * shown the first folder; refreshing replaces that stale node instead of adding
+	 * the folded occurrence beside it.
+	 */
+	protected void scheduleFoldRefresh(Object parent) {
+		TreeViewer viewer= fViewer;
+		if (viewer == null || viewer.getControl().isDisposed()) {
+			return;
+		}
+		Object refreshTarget= getFoldRefreshTarget(parent);
+		if (refreshTarget == null) {
+			refreshTarget= viewer.getInput();
+		}
+		if (refreshTarget == null) {
+			return;
+		}
+		synchronized (fPendingFoldRefreshTargets) {
+			fPendingFoldRefreshTargets.add(refreshTarget);
+			if (fFoldRefreshScheduled) {
+				return;
+			}
+			fPendingExpandedPaths= viewer.getExpandedTreePaths();
+			fFoldRefreshScheduled= true;
+		}
+		viewer.getControl().getDisplay().asyncExec(this::runPendingFoldRefreshes);
+	}
+
+	private Object getFoldRefreshTarget(Object parent) {
+		Object refreshTarget= parent;
+		if (parent instanceof IFolder folder) {
+			FoldedResourceFolder foldedParent= createFoldedPipelinedParent(folder);
+			if (foldedParent != null) {
+				refreshTarget= foldedParent.getParent();
+			}
+		}
+		return refreshTarget;
+	}
+
+	private void runPendingFoldRefreshes() {
+		Set<Object> refreshTargets;
+		TreePath[] expandedPaths;
+		synchronized (fPendingFoldRefreshTargets) {
+			refreshTargets= Set.copyOf(fPendingFoldRefreshTargets);
+			expandedPaths= fPendingExpandedPaths;
+			fPendingFoldRefreshTargets.clear();
+			fPendingExpandedPaths= null;
+			fFoldRefreshScheduled= false;
+		}
+		TreeViewer viewer= fViewer;
+		if (viewer == null || viewer.getControl().isDisposed()) {
+			return;
+		}
+		for (Object target : refreshTargets) {
+			viewer.refresh(target, true);
+		}
+		viewer.getControl().getDisplay().asyncExec(() -> restoreExpandedPaths(viewer, expandedPaths));
+	}
+
+	private static void restoreExpandedPaths(TreeViewer viewer, TreePath[] expandedPaths) {
+		if (!viewer.getControl().isDisposed() && expandedPaths != null) {
+			viewer.setExpandedTreePaths(expandedPaths);
+		}
 	}
 
 	@Override
 	public PipelinedShapeModification interceptRemove(
 			PipelinedShapeModification removeModification) {
+		Object originalParent= removeModification.getParent();
+		boolean resourceShapeChanged= containsResource(removeModification.getChildren());
+		IJavaElement javaParent= originalParent instanceof IContainer container ? convert(container) : null;
 		deconvertJavaProjects(removeModification);
 		convertToJavaElements(removeModification.getChildren());
+		if (resourceShapeChanged && isResourceFolderFoldingEnabled()) {
+			scheduleFoldRefresh(originalParent);
+			if (javaParent != null && !originalParent.equals(javaParent)) {
+				scheduleFoldRefresh(javaParent);
+			}
+		}
 		return removeModification;
+	}
+
+	private static boolean containsResource(Set<?> children) {
+		return children.stream().anyMatch(IResource.class::isInstance);
 	}
 
 	private void deconvertJavaProjects(PipelinedShapeModification modification) {
@@ -405,6 +517,12 @@ public class JavaNavigatorContentProvider extends
 					proposedChildren.remove(resource);
 				}
 				proposedChildren.add(element);
+			} else if (element instanceof FoldedResourceFolder folded) {
+				boolean represented= proposedChildren.remove(folded.getFirstFolder());
+				represented|= proposedChildren.remove(folded.getFolder());
+				if (represented) {
+					proposedChildren.add(folded);
+				}
 			} else if (element instanceof IFolder && parent instanceof IContainer) {
 				// Generic resource content owns raw folders in the Project Explorer.
 			} else if (element != null) {
@@ -413,14 +531,15 @@ public class JavaNavigatorContentProvider extends
 		}
 	}
 
-	private void foldPipelinedResourceFolders(Object parent, Set<Object> children) {
+	private boolean foldPipelinedResourceFolders(Object parent, Set<Object> children) {
 		if (!(parent instanceof IContainer) || !isResourceFolderFoldingEnabled()) {
-			return;
+			return false;
 		}
-		foldResourceFolderChildren(parent, children);
+		return foldResourceFolderChildren(parent, children);
 	}
 
-	private void foldResourceFolderChildren(Object visibleParent, Set<Object> children) {
+	private boolean foldResourceFolderChildren(Object visibleParent, Set<Object> children) {
+		boolean changed= false;
 		for (Object child : List.copyOf(children)) {
 			if (child instanceof IFolder folder) {
 				try {
@@ -428,12 +547,14 @@ public class JavaNavigatorContentProvider extends
 					if (!folder.equals(folded)) {
 						children.remove(folder);
 						children.add(new FoldedResourceFolder(visibleParent, folder, folded));
+						changed= true;
 					}
 				} catch (CoreException e) {
 					// leave the original folder unfolded
 				}
 			}
 		}
+		return changed;
 	}
 
 	private Object[] getFoldedResourceFolderChildren(FoldedResourceFolder parent) {
@@ -489,8 +610,13 @@ public class JavaNavigatorContentProvider extends
 	}
 
 	private IFolder getFoldedResourceFolder(IFolder folder) throws CoreException {
+		return getFoldedResourceFolder(folder, this::isVisible);
+	}
+
+	static IFolder getFoldedResourceFolder(IFolder folder, BiPredicate<Object, Object> visibility) throws CoreException {
 		IFolder child;
-		while (!isPackageFragmentRoot(folder) && (child= getSingleVisibleResourceFolderChild(folder)) != null) {
+		while (!isPackageFragmentRoot(folder)
+				&& (child= getSingleVisibleResourceFolderChild(folder, visibility)) != null) {
 			folder= child;
 		}
 		return folder;
@@ -501,10 +627,11 @@ public class JavaNavigatorContentProvider extends
 		return javaElement instanceof IPackageFragmentRoot && javaElement.exists();
 	}
 
-	private IFolder getSingleVisibleResourceFolderChild(IFolder folder) throws CoreException {
+	private static IFolder getSingleVisibleResourceFolderChild(IFolder folder,
+			BiPredicate<Object, Object> visibility) throws CoreException {
 		IFolder result= null;
 		for (IResource child : folder.members()) {
-			if (isVisible(folder, child)) {
+			if (visibility.test(folder, child)) {
 				if (!(child instanceof IFolder childFolder) || result != null) {
 					return null;
 				}
@@ -512,6 +639,19 @@ public class JavaNavigatorContentProvider extends
 			}
 		}
 		return result;
+	}
+
+	@Override
+	protected boolean isVisible(Object parent, Object child) {
+		if (fViewer == null) {
+			return true;
+		}
+		for (ViewerFilter filter : fViewer.getFilters()) {
+			if (!(filter instanceof FoldedResourceFolderFilter) && !filter.select(fViewer, parent, child)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 

@@ -21,7 +21,6 @@ import org.eclipse.core.runtime.IPath;
 
 import org.eclipse.core.resources.IContainer;
 import org.eclipse.core.resources.IFolder;
-import org.eclipse.core.resources.IResource;
 
 import org.eclipse.jface.resource.ImageDescriptor;
 
@@ -48,19 +47,19 @@ public final class FoldedResourceFolder implements IAdaptable, IWorkbenchAdapter
 		fFolder= Objects.requireNonNull(folder);
 	}
 
-	Object getParent() {
+	public Object getParent() {
 		return fParent;
 	}
 
-	IFolder getFirstFolder() {
+	public IFolder getFirstFolder() {
 		return fFirstFolder;
 	}
 
-	IFolder getFolder() {
+	public IFolder getFolder() {
 		return fFolder;
 	}
 
-	String getLabel() {
+	public String getLabel() {
 		IPath firstPath= fFirstFolder.getProjectRelativePath();
 		IPath folderPath= fFolder.getProjectRelativePath();
 		return folderPath.makeRelativeTo(firstPath.removeLastSegments(1)).toString();
@@ -71,7 +70,7 @@ public final class FoldedResourceFolder implements IAdaptable, IWorkbenchAdapter
 		if (adapter == IWorkbenchAdapter.class) {
 			return adapter.cast(this);
 		}
-		if (adapter == IContainer.class || adapter == IResource.class) {
+		if (adapter == IContainer.class) {
 			return null;
 		}
 		if (adapter.isInstance(fFolder)) {

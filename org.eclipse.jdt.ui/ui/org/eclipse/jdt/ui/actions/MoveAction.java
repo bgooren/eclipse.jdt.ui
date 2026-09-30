@@ -40,6 +40,7 @@ import org.eclipse.jdt.internal.ui.IJavaHelpContextIds;
 import org.eclipse.jdt.internal.ui.actions.ActionUtil;
 import org.eclipse.jdt.internal.ui.actions.SelectionConverter;
 import org.eclipse.jdt.internal.ui.javaeditor.JavaEditor;
+import org.eclipse.jdt.internal.ui.navigator.FoldedResourceSelectionProvider;
 import org.eclipse.jdt.internal.ui.refactoring.RefactoringMessages;
 import org.eclipse.jdt.internal.ui.refactoring.actions.MoveInstanceMethodAction;
 import org.eclipse.jdt.internal.ui.refactoring.actions.MoveStaticMembersAction;
@@ -114,9 +115,13 @@ public class MoveAction extends SelectionDispatchAction{
 	 */
 	@Override
 	public void selectionChanged(SelectionChangedEvent event) {
-		fMoveStaticMembersAction.selectionChanged(event);
-		fMoveInstanceMethodAction.selectionChanged(event);
-		fReorgMoveAction.selectionChanged(event);
+		ISelection selection= FoldedResourceSelectionProvider.toResourceSelection(event.getSelection());
+		SelectionChangedEvent resourceEvent= selection == event.getSelection()
+				? event
+				: new SelectionChangedEvent(event.getSelectionProvider(), selection);
+		fMoveStaticMembersAction.selectionChanged(resourceEvent);
+		fMoveInstanceMethodAction.selectionChanged(resourceEvent);
+		fReorgMoveAction.selectionChanged(resourceEvent);
 		setEnabled(computeEnableState());
 	}
 
@@ -134,6 +139,10 @@ public class MoveAction extends SelectionDispatchAction{
 	 */
 	@Override
 	public void run(IStructuredSelection selection) {
+		ISelection resourceSelection= FoldedResourceSelectionProvider.toResourceSelection(selection);
+		if (resourceSelection instanceof IStructuredSelection structured) {
+			selection= structured;
+		}
 		try {
 			if (fMoveInstanceMethodAction.isEnabled() && tryMoveInstanceMethod(selection))
 				return;
@@ -262,6 +271,7 @@ public class MoveAction extends SelectionDispatchAction{
 	 */
 	@Override
 	public void update(ISelection selection) {
+		selection= FoldedResourceSelectionProvider.toResourceSelection(selection);
 		fMoveStaticMembersAction.update(selection);
 		fMoveInstanceMethodAction.update(selection);
 		fReorgMoveAction.update(selection);

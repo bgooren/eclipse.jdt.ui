@@ -49,6 +49,7 @@ import org.eclipse.jdt.ui.actions.SelectionDispatchAction;
 import org.eclipse.jdt.internal.ui.IJavaHelpContextIds;
 import org.eclipse.jdt.internal.ui.JavaPlugin;
 import org.eclipse.jdt.internal.ui.packageview.PackageExplorerPart;
+import org.eclipse.jdt.internal.ui.navigator.FoldedResourceDeleteAction;
 import org.eclipse.jdt.internal.ui.refactoring.RefactoringMessages;
 import org.eclipse.jdt.internal.ui.util.ExceptionHandler;
 import org.eclipse.jdt.internal.ui.util.SelectionUtil;
@@ -184,6 +185,9 @@ public class DeleteAction extends SelectionDispatchAction {
 
 	@Override
 	public void run(IStructuredSelection selection) {
+		if (FoldedResourceDeleteAction.runIfFolded(getSelectionProvider(), getShell())) {
+			return;
+		}
 		if (ReorgUtilsCore.containsOnlyProjects(selection.toList())) {
 			createWorkbenchAction(selection).run();
 			return;

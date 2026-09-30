@@ -33,10 +33,13 @@ import org.eclipse.core.resources.IResource;
 import org.eclipse.jface.util.LocalSelectionTransfer;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.jface.viewers.TreePath;
+import org.eclipse.jface.viewers.TreeViewer;
 
 import org.eclipse.ui.actions.CopyFilesAndFoldersOperation;
 import org.eclipse.ui.navigator.CommonDropAdapter;
 import org.eclipse.ui.navigator.CommonDropAdapterAssistant;
+import org.eclipse.ui.navigator.IExtensionStateModel;
 
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
@@ -69,6 +72,8 @@ public class JavaDropAdapterAssistant extends CommonDropAdapterAssistant {
 	public IStatus handleDrop(CommonDropAdapter dropAdapter, DropTargetEvent dropTargetEvent, Object target) {
 		int currentOperation= dropAdapter.getCurrentOperation();
 		if (LocalSelectionTransfer.getTransfer().isSupportedType(dropAdapter.getCurrentTransfer())) {
+			TreeViewer viewer= getTreeViewer();
+			TreePath[] expandedPaths= viewer == null ? null : viewer.getExpandedTreePaths();
 			try {
 				target= getActualTarget(target);
 				switch (currentOperation) {
@@ -86,8 +91,10 @@ public class JavaDropAdapterAssistant extends CommonDropAdapterAssistant {
 				ExceptionHandler.handle(e, RefactoringMessages.OpenRefactoringWizardAction_refactoring, RefactoringMessages.OpenRefactoringWizardAction_exception);
 			} catch (InterruptedException e) {
 				//ok
+			} finally {
+				clear();
+				scheduleExpandedPathRestore(viewer, expandedPaths);
 			}
-			clear();
 			return Status.OK_STATUS;
 		} else if (FileTransfer.getInstance().isSupportedType(dropAdapter.getCurrentTransfer())) {
 			try {
@@ -106,6 +113,31 @@ public class JavaDropAdapterAssistant extends CommonDropAdapterAssistant {
 			return Status.OK_STATUS;
 		}
 		return Status.CANCEL_STATUS;
+	}
+
+	private TreeViewer getTreeViewer() {
+		IExtensionStateModel stateModel= getContentService().findStateModel(JavaNavigatorContentProvider.JDT_EXTENSION_ID);
+		if (stateModel == null) {
+			return null;
+		}
+		Object viewer= stateModel.getProperty(JavaNavigatorContentProvider.VIEWER_PROPERTY);
+		return viewer instanceof TreeViewer treeViewer ? treeViewer : null;
+	}
+
+	private static void scheduleExpandedPathRestore(TreeViewer viewer, TreePath[] expandedPaths) {
+		if (viewer == null || expandedPaths == null || viewer.getControl().isDisposed()) {
+			return;
+		}
+		viewer.getControl().getDisplay().asyncExec(() -> {
+			if (viewer.getControl().isDisposed()) {
+				return;
+			}
+			viewer.getControl().getDisplay().asyncExec(() -> {
+				if (!viewer.getControl().isDisposed()) {
+					viewer.setExpandedTreePaths(expandedPaths);
+				}
+			});
+		});
 	}
 
 	@Override

@@ -24,6 +24,8 @@ import org.eclipse.ui.PlatformUI;
 
 import org.eclipse.jdt.internal.ui.IJavaHelpContextIds;
 import org.eclipse.jdt.internal.ui.javaeditor.JavaEditor;
+import org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder;
+import org.eclipse.jdt.internal.ui.navigator.FoldedResourceRenameAction;
 import org.eclipse.jdt.internal.ui.refactoring.RefactoringMessages;
 import org.eclipse.jdt.internal.ui.refactoring.actions.RenameJavaElementAction;
 import org.eclipse.jdt.internal.ui.refactoring.actions.RenameResourceAction;
@@ -80,6 +82,11 @@ public class RenameAction extends SelectionDispatchAction {
 	 */
 	@Override
 	public void selectionChanged(SelectionChangedEvent event) {
+		if (event.getSelection() instanceof IStructuredSelection structured
+				&& FoldedResourceRenameAction.getFoldedFolder(structured) != null) {
+			setEnabled(true);
+			return;
+		}
 		fRenameJavaElement.selectionChanged(event);
 		if (fRenameResource != null)
 			fRenameResource.selectionChanged(event);
@@ -91,6 +98,11 @@ public class RenameAction extends SelectionDispatchAction {
 	 */
 	@Override
 	public void update(ISelection selection) {
+		if (selection instanceof IStructuredSelection structured
+				&& FoldedResourceRenameAction.getFoldedFolder(structured) != null) {
+			setEnabled(true);
+			return;
+		}
 		fRenameJavaElement.update(selection);
 
 		if (fRenameResource != null)
@@ -109,6 +121,11 @@ public class RenameAction extends SelectionDispatchAction {
 
 	@Override
 	public void run(IStructuredSelection selection) {
+		FoldedResourceFolder folded= FoldedResourceRenameAction.getFoldedFolder(selection);
+		if (folded != null) {
+			FoldedResourceRenameAction.run(folded, getShell());
+			return;
+		}
 		if (fRenameJavaElement.isEnabled())
 			fRenameJavaElement.run(selection);
 		if (fRenameResource != null && fRenameResource.isEnabled())

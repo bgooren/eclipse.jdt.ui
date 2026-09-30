@@ -50,11 +50,14 @@ public class JavaFileLinkHelper implements ILinkHelper {
 
 	@Override
 	public IStructuredSelection findSelection(IEditorInput input) {
-		IJavaElement element= JavaUI.getEditorInputJavaElement(input);
+		Object element= JavaUI.getEditorInputJavaElement(input);
 		if (element == null) {
 			IFile file = ResourceUtil.getFile(input);
 			if (file != null) {
 				element= JavaCore.create(file);
+				if (element == null) {
+					element= file;
+				}
 			}
 		}
 		return (element != null) ? new StructuredSelection(element) : StructuredSelection.EMPTY;

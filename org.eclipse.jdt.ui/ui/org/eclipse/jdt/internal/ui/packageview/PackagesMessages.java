@@ -30,6 +30,18 @@ public final class PackagesMessages extends NLS {
 	public static String DragAdapter_refreshing;
 	public static String DropAdapter_errorTitle;
 	public static String DropAdapter_errorMessage;
+	public static String FoldedResourceDeleteAction_confirmMultiple;
+	public static String FoldedResourceDeleteAction_confirmSingle;
+	public static String FoldedResourceDeleteAction_job;
+	public static String FoldedResourceDeleteAction_operation;
+	public static String FoldedResourceDeleteAction_title;
+	public static String FoldedResourceRenameAction_dialogMessage;
+	public static String FoldedResourceRenameAction_dialogTitle;
+	public static String FoldedResourceRenameAction_errorTitle;
+	public static String FoldedResourceRenameAction_existingResource;
+	public static String FoldedResourceRenameAction_operation;
+	public static String FoldedResourceRenameAction_samePath;
+	public static String FoldedResourceRenameAction_segmentCount;
 	public static String GotoPackage_action_label;
 	public static String GotoPackage_dialog_message;
 	public static String GotoPackage_dialog_title;
