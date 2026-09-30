@@ -19,7 +19,9 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IAdaptable;
 import org.eclipse.core.runtime.IPath;
 
+import org.eclipse.core.resources.IContainer;
 import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IResource;
 
 import org.eclipse.jface.resource.ImageDescriptor;
 
@@ -68,6 +70,9 @@ public final class FoldedResourceFolder implements IAdaptable, IWorkbenchAdapter
 	public <T> T getAdapter(Class<T> adapter) {
 		if (adapter == IWorkbenchAdapter.class) {
 			return adapter.cast(this);
+		}
+		if (adapter == IContainer.class || adapter == IResource.class) {
+			return null;
 		}
 		if (adapter.isInstance(fFolder)) {
 			return adapter.cast(fFolder);

@@ -275,6 +275,7 @@ public class JavaNavigatorContentProvider extends
 		}
 
 		convertToJavaElements(addModification);
+		foldPipelinedResourceFolders(addModification.getParent(), addModification.getChildren());
 		return addModification;
 	}
 

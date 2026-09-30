@@ -120,6 +120,9 @@ public class JavaNavigatorActionProvider extends CommonActionProvider {
 	}
 
 	static ActionContext toResourceContext(ActionContext context) {
+		if (context == null) {
+			return null;
+		}
 		ISelection resourceSelection= FoldedResourceSelectionProvider.toResourceSelection(context.getSelection());
 		if (resourceSelection == context.getSelection()) {
 			return context;

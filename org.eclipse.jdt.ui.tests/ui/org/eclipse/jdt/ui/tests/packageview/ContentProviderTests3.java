@@ -16,6 +16,7 @@ package org.eclipse.jdt.ui.tests.packageview;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -41,6 +42,7 @@ import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Platform;
 
 import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IContainer;
 import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IResourceDelta;
@@ -50,18 +52,23 @@ import org.eclipse.core.resources.ResourcesPlugin;
 
 import org.eclipse.debug.ui.actions.ILaunchable;
 
-import org.eclipse.jface.viewers.ITreeContentProvider;
 import org.eclipse.jface.viewers.ISelectionChangedListener;
+import org.eclipse.jface.viewers.ITreeContentProvider;
 import org.eclipse.jface.viewers.SelectionChangedEvent;
 import org.eclipse.jface.viewers.StructuredSelection;
+import org.eclipse.jface.viewers.TreePath;
 
 import org.eclipse.ui.IViewPart;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.model.IWorkbenchAdapter;
+import org.eclipse.ui.navigator.CommonViewerComparator;
 import org.eclipse.ui.navigator.ICommonContentExtensionSite;
 import org.eclipse.ui.navigator.IExtensionStateModel;
+import org.eclipse.ui.navigator.INavigatorContentService;
+import org.eclipse.ui.navigator.NavigatorContentServiceFactory;
+import org.eclipse.ui.navigator.PipelinedShapeModification;
 
 import org.eclipse.jdt.core.ElementChangedEvent;
 import org.eclipse.jdt.core.ICompilationUnit;
@@ -79,7 +86,9 @@ import org.eclipse.jdt.internal.ui.actions.SimpleSelectionProvider;
 import org.eclipse.jdt.internal.ui.filters.NamePatternFilter;
 import org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder;
 import org.eclipse.jdt.internal.ui.navigator.FoldedResourceSelectionProvider;
+import org.eclipse.jdt.internal.ui.navigator.JavaNavigatorActionProvider;
 import org.eclipse.jdt.internal.ui.navigator.JavaNavigatorContentProvider;
+import org.eclipse.jdt.internal.ui.navigator.JavaNavigatorLabelProvider;
 import org.eclipse.jdt.internal.ui.packageview.PackageExplorerContentProvider;
 import org.eclipse.jdt.internal.ui.packageview.PackageExplorerLabelProvider;
 import org.eclipse.jdt.internal.ui.util.CoreUtility;
@@ -251,11 +260,23 @@ public class ContentProviderTests3{
 		IFile migrationFile= migration.getFile("V1.sql"); //$NON-NLS-1$
 		migrationFile.create(new ByteArrayInputStream(new byte[0]), true, null);
 		IFolder webapp= createFolderHierarchy(main, "webapp"); //$NON-NLS-1$
+		IFolder loose= createFolderHierarchy(root, "loose"); //$NON-NLS-1$
+		IFolder nested= createFolderHierarchy(loose, "nested"); //$NON-NLS-1$
+		IFolder leaf= createFolderHierarchy(nested, "leaf"); //$NON-NLS-1$
+		leaf.getFile("content.txt").create(new ByteArrayInputStream(new byte[0]), true, null); //$NON-NLS-1$
 		JavaProjectHelper.addSourceContainer(fJProject2, java.getProjectRelativePath().toString());
 		JavaProjectHelper.addSourceContainer(fJProject2, resources.getProjectRelativePath().toString(), new Path[0],
 				new Path[] { new Path("**") }); //$NON-NLS-1$
 		JavaNavigatorContentProvider provider= createJavaNavigatorContentProvider();
 		try {
+			Set<Object> additions= new LinkedHashSet<>(Set.of(loose));
+			provider.interceptAdd(new PipelinedShapeModification(root, additions));
+			assertEquals(1, additions.size(), "Incremental addition retained the unfolded resource folder"); //$NON-NLS-1$
+			assertTrue(additions.iterator().next() instanceof FoldedResourceFolder,
+					"Incremental addition did not fold the resource folder"); //$NON-NLS-1$
+			assertEquals("loose/nested/leaf", additions.iterator().next().toString(), //$NON-NLS-1$
+					"Incremental addition produced the wrong folded path"); //$NON-NLS-1$
+
 			Set<Object> children= new LinkedHashSet<>();
 			children.add(src);
 
@@ -291,6 +312,10 @@ public class ContentProviderTests3{
 					.orElseThrow();
 			assertEquals(Set.of(physicalMigration, configFile), children, "Physical resource hierarchy was not folded"); //$NON-NLS-1$
 			assertEquals(migration, physicalMigration.getAdapter(IFolder.class), "Physical fold adapted to the wrong folder"); //$NON-NLS-1$
+			assertNull(physicalMigration.getAdapter(IContainer.class),
+					"Physical fold leaked into generic container content extensions"); //$NON-NLS-1$
+			assertNull(physicalMigration.getAdapter(IResource.class),
+					"Physical fold leaked into generic resource content extensions"); //$NON-NLS-1$
 			assertEquals("db/migration", physicalMigration.toString(), "Wrong physical folded-folder label"); //$NON-NLS-1$ //$NON-NLS-2$
 			assertEquals(resources, provider.getPipelinedParent(physicalMigration, null), "Wrong physical folded-folder parent"); //$NON-NLS-1$
 			assertEquals(physicalMigration, provider.getPipelinedParent(migrationFile, migration),
@@ -300,6 +325,23 @@ public class ContentProviderTests3{
 					"Folded resource folder was not sorted as a folder"); //$NON-NLS-1$
 			assertTrue(comparator.compare(fMyPart.getTreeViewer(), physicalMigration, configFile) < 0,
 					"Folded resource folder was sorted after a file"); //$NON-NLS-1$
+			INavigatorContentService contentService= NavigatorContentServiceFactory.INSTANCE
+					.createContentService("org.eclipse.ui.navigator.ProjectExplorer"); //$NON-NLS-1$
+			try {
+				contentService.getActivationService().activateExtensions(new String[] {
+						"org.eclipse.jdt.java.ui.javaContent", //$NON-NLS-1$
+						"org.eclipse.ui.navigator.resources.nested.nestedProjectContentProvider" }, false); //$NON-NLS-1$
+				assertEquals("db/migration", new JavaNavigatorLabelProvider().getText(physicalMigration), //$NON-NLS-1$
+						"Java content extension lost the folded path label"); //$NON-NLS-1$
+				CommonViewerComparator commonComparator= new CommonViewerComparator();
+				commonComparator.setContentService(contentService);
+				TreePath parentPath= new TreePath(new Object[] { fJProject2.getProject() });
+				assertTrue(commonComparator.compare(fMyPart.getTreeViewer(), parentPath,
+						fJProject1.getProject(), physicalMigration) < 0,
+						"Common Navigator sorted a folded folder before a nested project"); //$NON-NLS-1$
+			} finally {
+				contentService.dispose();
+			}
 			assertEquals("db/migration", physicalMigration.getAdapter(IWorkbenchAdapter.class) //$NON-NLS-1$
 					.getLabel(physicalMigration), "Workbench adapter lost the folded path label"); //$NON-NLS-1$
 			assertTrue(Platform.getAdapterManager().hasAdapter(physicalMigration, ILaunchable.class.getName()),
@@ -346,6 +388,12 @@ public class ContentProviderTests3{
 		} finally {
 			provider.dispose();
 		}
+	}
+
+	@Test
+	public void testJavaNavigatorActionProviderAcceptsNullContext() {
+		JavaNavigatorActionProvider actionProvider= new JavaNavigatorActionProvider();
+		actionProvider.setContext(null);
 	}
 
 	@Test
