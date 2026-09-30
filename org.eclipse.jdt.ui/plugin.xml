@@ -6201,10 +6201,16 @@
 				name="%javaResourceLabelsContentName"
 				priority="highest">
 			<triggerPoints>
-				<instanceof value="org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder" />
+				<and>
+					<instanceof value="org.eclipse.core.resources.IFolder" />
+					<test property="org.eclipse.core.resources.projectNature" value="org.eclipse.jdt.core.javanature" />
+				</and>
 			</triggerPoints>
 			<possibleChildren>
-				<instanceof value="org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder" />
+				<and>
+					<instanceof value="org.eclipse.core.resources.IFolder" />
+					<test property="org.eclipse.core.resources.projectNature" value="org.eclipse.jdt.core.javanature" />
+				</and>
 			</possibleChildren>
 			<override
 					policy="InvokeAlwaysRegardlessOfSuppressedExt"

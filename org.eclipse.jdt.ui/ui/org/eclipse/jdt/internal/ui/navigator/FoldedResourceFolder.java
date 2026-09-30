@@ -50,6 +50,10 @@ public final class FoldedResourceFolder implements IAdaptable, IWorkbenchAdapter
 		return fParent;
 	}
 
+	IFolder getFirstFolder() {
+		return fFirstFolder;
+	}
+
 	IFolder getFolder() {
 		return fFolder;
 	}

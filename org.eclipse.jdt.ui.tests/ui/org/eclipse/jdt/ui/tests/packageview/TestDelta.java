@@ -32,6 +32,7 @@ public class TestDelta implements IJavaElementDelta {
 	private final IJavaElement fElement;
 
 	private IJavaElementDelta[] fAffectedChildren;
+	private IResourceDelta[] fResourceDeltas;
 
 	public TestDelta(int kind, IJavaElement element) {
 		fKind= kind;
@@ -108,11 +109,15 @@ public class TestDelta implements IJavaElementDelta {
 		*/
 	@Override
 	public IResourceDelta[] getResourceDeltas() {
-		return null;
+		return fResourceDeltas;
 	}
 
 	public void setAffectedChildren(IJavaElementDelta[] children) {
 		fAffectedChildren= children;
+	}
+
+	public void setResourceDeltas(IResourceDelta[] resourceDeltas) {
+		fResourceDeltas= resourceDeltas;
 	}
 
 	public static TestDelta createParentDeltas(IPackageFragment frag, TestDelta delta) {

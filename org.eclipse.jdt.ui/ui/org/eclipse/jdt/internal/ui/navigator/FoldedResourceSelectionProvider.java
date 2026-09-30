@@ -26,7 +26,7 @@ import org.eclipse.jface.viewers.SelectionChangedEvent;
 import org.eclipse.jface.viewers.StructuredSelection;
 
 /**
- * Presents folded resource folders as their leaf {@code IFolder} to actions,
+ * Presents folded resource folders as their first {@code IFolder} to actions,
  * while leaving the actual viewer selection unchanged.
  */
 public final class FoldedResourceSelectionProvider implements ISelectionProvider {
@@ -74,7 +74,7 @@ public final class FoldedResourceSelectionProvider implements ISelectionProvider
 		}
 		List<Object> elements= new ArrayList<>(structuredSelection.size());
 		for (Object element : structuredSelection) {
-			elements.add(element instanceof FoldedResourceFolder folded ? folded.getFolder() : element);
+			elements.add(element instanceof FoldedResourceFolder folded ? folded.getFirstFolder() : element);
 		}
 		return new StructuredSelection(elements);
 	}

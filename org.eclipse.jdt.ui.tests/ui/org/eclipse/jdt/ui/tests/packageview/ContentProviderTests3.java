@@ -43,6 +43,7 @@ import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceDelta;
 import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.IWorkspaceDescription;
 import org.eclipse.core.resources.ResourcesPlugin;
@@ -322,8 +323,8 @@ public class ContentProviderTests3{
 			viewerSelectionProvider.setSelection(new StructuredSelection(physicalMigration));
 			FoldedResourceSelectionProvider actionSelectionProvider=
 					new FoldedResourceSelectionProvider(viewerSelectionProvider);
-			assertEquals(new StructuredSelection(migration), actionSelectionProvider.getSelection(),
-					"Actions did not receive the folded folder's leaf resource"); //$NON-NLS-1$
+			assertEquals(new StructuredSelection(db), actionSelectionProvider.getSelection(),
+					"Actions did not receive the folded folder's first resource"); //$NON-NLS-1$
 			assertEquals(new StructuredSelection(physicalMigration), viewerSelectionProvider.getSelection(),
 					"Action selection conversion changed the viewer selection"); //$NON-NLS-1$
 
@@ -337,8 +338,8 @@ public class ContentProviderTests3{
 			viewerSelectionProvider.setSelection(new StructuredSelection(physicalMigration));
 			assertSame(actionSelectionProvider, translatedEvent.get().getSelectionProvider(),
 					"Translated event exposed the viewer selection provider"); //$NON-NLS-1$
-			assertEquals(new StructuredSelection(migration), translatedEvent.get().getSelection(),
-					"Selection event did not contain the leaf resource"); //$NON-NLS-1$
+			assertEquals(new StructuredSelection(db), translatedEvent.get().getSelection(),
+					"Selection event did not contain the first resource"); //$NON-NLS-1$
 			actionSelectionProvider.removeSelectionChangedListener(listener);
 			viewerSelectionProvider.setSelection(new StructuredSelection(physicalMigration));
 			assertEquals(1, eventCount.get(), "Removed action listener was still notified"); //$NON-NLS-1$
@@ -426,6 +427,34 @@ public class ContentProviderTests3{
 		assertTrue(fMyPart.hasRefreshHappened(), "Refresh happened"); //$NON-NLS-1$
 		assertTrue(fMyPart.wasObjectRefreshed(fRoot1), "Correct Refresh"); //$NON-NLS-1$
 		assertEquals(1, fMyPart.getRefreshedObject().size(), "Single refresh"); //$NON-NLS-1$
+	}
+
+	@Test
+	public void testAddTopLevelFoldedResourceRefreshesProject() throws Exception {
+		IFolder first= fJProject2.getProject().getFolder("outputs"); //$NON-NLS-1$
+		first.create(true, true, null);
+		IFolder leaf= createFolderHierarchy(first, "result"); //$NON-NLS-1$
+		assertTrue(leaf.exists());
+		fMyPart.clear();
+
+		IResourceDelta resourceDelta= (IResourceDelta) Proxy.newProxyInstance(
+				getClass().getClassLoader(), new Class<?>[] { IResourceDelta.class },
+				(proxy, method, args) -> switch (method.getName()) {
+					case "getKind" -> IResourceDelta.ADDED; //$NON-NLS-1$
+					case "getResource" -> first; //$NON-NLS-1$
+					case "getAffectedChildren" -> new IResourceDelta[0]; //$NON-NLS-1$
+					case "getFlags" -> 0; //$NON-NLS-1$
+					default -> null;
+				});
+		TestDelta projectDelta= new TestDelta(IJavaElementDelta.CHANGED, fJProject2);
+		projectDelta.setResourceDeltas(new IResourceDelta[] { resourceDelta });
+		TestDelta modelDelta= new TestDelta(IJavaElementDelta.CHANGED, fJProject2.getJavaModel());
+		modelDelta.setAffectedChildren(new IJavaElementDelta[] { projectDelta });
+
+		sendEvent(modelDelta);
+
+		assertFalse(fMyPart.hasAddHappened(), "Foldable top-level folder was added without recomputing folding"); //$NON-NLS-1$
+		assertTrue(fMyPart.wasObjectRefreshed(fJProject2), "Java project was not refreshed"); //$NON-NLS-1$
 	}
 
 	@Test

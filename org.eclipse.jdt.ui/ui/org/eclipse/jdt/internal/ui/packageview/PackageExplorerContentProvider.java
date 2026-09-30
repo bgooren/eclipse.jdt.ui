@@ -953,7 +953,7 @@ public class PackageExplorerContentProvider extends StandardJavaElementContentPr
 
 		if (!fIsFlatLayout && fFoldResourceFolders
 				&& (status == IResourceDelta.ADDED || status == IResourceDelta.REMOVED)
-				&& resource.getParent() instanceof IFolder) {
+				&& (resource instanceof IFolder || resource.getParent() instanceof IFolder)) {
 			postRefresh(getVisibleResourceAncestor(parent), ORIGINAL, resource, runnables);
 			return true;
 		}
