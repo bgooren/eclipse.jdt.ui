@@ -13,12 +13,9 @@
  *******************************************************************************/
 package org.eclipse.jdt.internal.ui.navigator;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import org.eclipse.jface.action.IMenuManager;
-import org.eclipse.jface.viewers.IStructuredSelection;
-import org.eclipse.jface.viewers.StructuredSelection;
+import org.eclipse.jface.viewers.ISelection;
+import org.eclipse.jface.viewers.ISelectionProvider;
 
 import org.eclipse.ui.IActionBars;
 import org.eclipse.ui.IViewPart;
@@ -97,7 +94,9 @@ public class JavaNavigatorActionProvider extends CommonActionProvider {
 				fOpenViewGroup= new OpenViewActionGroup(viewPart, site.getStructuredViewer());
 				fOpenViewGroup.containsOpenPropertiesAction(false);
 				fOpenViewGroup.containsShowInMenu(false);
-				fCCPGroup= new CCPActionGroup(viewPart);
+				ISelectionProvider resourceSelectionProvider=
+						new FoldedResourceSelectionProvider(site.getStructuredViewer());
+				fCCPGroup= new CCPActionGroup(viewPart.getSite(), resourceSelectionProvider);
 				fGenerateGroup= new GenerateActionGroup(viewPart);
 				fSearchGroup= new JavaSearchActionGroup(viewPart);
 				fBuildPathGroup= new GenerateBuildPathActionGroup(viewPart);
@@ -121,15 +120,11 @@ public class JavaNavigatorActionProvider extends CommonActionProvider {
 	}
 
 	static ActionContext toResourceContext(ActionContext context) {
-		if (!(context.getSelection() instanceof IStructuredSelection selection)
-				|| selection.toList().stream().noneMatch(FoldedResourceFolder.class::isInstance)) {
+		ISelection resourceSelection= FoldedResourceSelectionProvider.toResourceSelection(context.getSelection());
+		if (resourceSelection == context.getSelection()) {
 			return context;
 		}
-		List<Object> elements= new ArrayList<>(selection.size());
-		for (Object element : selection) {
-			elements.add(element instanceof FoldedResourceFolder folded ? folded.getFolder() : element);
-		}
-		ActionContext resourceContext= new ActionContext(new StructuredSelection(elements));
+		ActionContext resourceContext= new ActionContext(resourceSelection);
 		resourceContext.setInput(context.getInput());
 		return resourceContext;
 	}

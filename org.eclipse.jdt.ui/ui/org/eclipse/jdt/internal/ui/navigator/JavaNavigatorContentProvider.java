@@ -233,7 +233,32 @@ public class JavaNavigatorContentProvider extends
 		if (object instanceof FoldedResourceFolder folded) {
 			return folded.getParent();
 		}
-		return getParent(object);
+		if (suggestedParent instanceof FoldedResourceFolder) {
+			return suggestedParent;
+		}
+		Object parent= getParent(object);
+		IFolder parentFolder= parent instanceof IFolder folder ? folder : null;
+		FoldedResourceFolder foldedParent= createFoldedPipelinedParent(parentFolder);
+		return foldedParent == null ? parent : foldedParent;
+	}
+
+	private FoldedResourceFolder createFoldedPipelinedParent(IFolder leafFolder) {
+		if (leafFolder == null || !isResourceFolderFoldingEnabled()) {
+			return null;
+		}
+		IFolder firstFolder= leafFolder;
+		IContainer visibleParent= leafFolder.getParent();
+		try {
+			while (visibleParent instanceof IFolder parentFolder && !isPackageFragmentRoot(parentFolder)
+					&& firstFolder.equals(getSingleVisibleResourceFolderChild(parentFolder))) {
+				firstFolder= parentFolder;
+				visibleParent= parentFolder.getParent();
+			}
+		} catch (CoreException e) {
+			return null;
+		}
+		return firstFolder.equals(leafFolder) ? null
+				: new FoldedResourceFolder(visibleParent, firstFolder, leafFolder);
 	}
 
 	@Override

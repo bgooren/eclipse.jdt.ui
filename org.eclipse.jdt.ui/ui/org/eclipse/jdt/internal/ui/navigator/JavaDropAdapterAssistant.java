@@ -174,6 +174,9 @@ public class JavaDropAdapterAssistant extends CommonDropAdapterAssistant {
 	}
 
 	private Object getActualTarget(Object target) {
+		if (target instanceof FoldedResourceFolder folded) {
+			return folded.getFolder();
+		}
 		if (target instanceof IProject) {
 			IJavaProject jp= JavaCore.create((IProject)target);
 			if (jp.exists())
@@ -193,7 +196,8 @@ public class JavaDropAdapterAssistant extends CommonDropAdapterAssistant {
 	protected void initializeSelection() {
 		if (fElements != null)
 			return;
-		ISelection s = LocalSelectionTransfer.getTransfer().getSelection();
+		ISelection s= FoldedResourceSelectionProvider.toResourceSelection(
+				LocalSelectionTransfer.getTransfer().getSelection());
 		if (!(s instanceof IStructuredSelection)) {
 			fElements= Collections.EMPTY_LIST;
 			return;

@@ -14,6 +14,7 @@
 package org.eclipse.jdt.internal.ui.navigator;
 
 import org.eclipse.jface.action.IMenuManager;
+import org.eclipse.jface.viewers.ISelectionProvider;
 
 import org.eclipse.ui.IActionBars;
 import org.eclipse.ui.IViewPart;
@@ -63,7 +64,9 @@ public class JavaNavigatorRefactorActionProvider extends CommonActionProvider {
 			if (workbenchSite.getPart() != null && workbenchSite.getPart() instanceof IViewPart) {
 				IViewPart viewPart= (IViewPart) workbenchSite.getPart();
 
-				fRefactorGroup= new RefactorActionGroup(viewPart);
+				ISelectionProvider resourceSelectionProvider=
+						new FoldedResourceSelectionProvider(site.getStructuredViewer());
+				fRefactorGroup= new RefactorActionGroup(viewPart.getSite(), resourceSelectionProvider);
 			}
 		}
 	}

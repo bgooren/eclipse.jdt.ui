@@ -27,6 +27,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +50,9 @@ import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.debug.ui.actions.ILaunchable;
 
 import org.eclipse.jface.viewers.ITreeContentProvider;
+import org.eclipse.jface.viewers.ISelectionChangedListener;
+import org.eclipse.jface.viewers.SelectionChangedEvent;
+import org.eclipse.jface.viewers.StructuredSelection;
 
 import org.eclipse.ui.IViewPart;
 import org.eclipse.ui.IWorkbench;
@@ -69,8 +74,10 @@ import org.eclipse.jdt.core.JavaCore;
 
 import org.eclipse.jdt.ui.JavaElementComparator;
 
+import org.eclipse.jdt.internal.ui.actions.SimpleSelectionProvider;
 import org.eclipse.jdt.internal.ui.filters.NamePatternFilter;
 import org.eclipse.jdt.internal.ui.navigator.FoldedResourceFolder;
+import org.eclipse.jdt.internal.ui.navigator.FoldedResourceSelectionProvider;
 import org.eclipse.jdt.internal.ui.navigator.JavaNavigatorContentProvider;
 import org.eclipse.jdt.internal.ui.packageview.PackageExplorerContentProvider;
 import org.eclipse.jdt.internal.ui.packageview.PackageExplorerLabelProvider;
@@ -232,14 +239,16 @@ public class ContentProviderTests3{
 		IFolder java= createFolderHierarchy(main, "java"); //$NON-NLS-1$
 		IFolder eu= createFolderHierarchy(java, "eu"); //$NON-NLS-1$
 		IFolder javaPackageLeaf= createFolderHierarchy(eu, "deldo", "webhosting"); //$NON-NLS-1$ //$NON-NLS-2$
-		javaPackageLeaf.getFile("Example.java").create(new ByteArrayInputStream( //$NON-NLS-1$
+		IFile javaFile= javaPackageLeaf.getFile("Example.java"); //$NON-NLS-1$
+		javaFile.create(new ByteArrayInputStream(
 				"package eu.deldo.webhosting; class Example {}".getBytes(StandardCharsets.UTF_8)), true, null); //$NON-NLS-1$
 		IFolder resources= createFolderHierarchy(main, "resources"); //$NON-NLS-1$
 		IFile configFile= resources.getFile("caffeine-jcache.conf"); //$NON-NLS-1$
 		configFile.create(new ByteArrayInputStream(new byte[0]), true, null);
 		IFolder db= createFolderHierarchy(resources, "db"); //$NON-NLS-1$
 		IFolder migration= createFolderHierarchy(db, "migration"); //$NON-NLS-1$
-		migration.getFile("V1.sql").create(new ByteArrayInputStream(new byte[0]), true, null); //$NON-NLS-1$
+		IFile migrationFile= migration.getFile("V1.sql"); //$NON-NLS-1$
+		migrationFile.create(new ByteArrayInputStream(new byte[0]), true, null);
 		IFolder webapp= createFolderHierarchy(main, "webapp"); //$NON-NLS-1$
 		JavaProjectHelper.addSourceContainer(fJProject2, java.getProjectRelativePath().toString());
 		JavaProjectHelper.addSourceContainer(fJProject2, resources.getProjectRelativePath().toString(), new Path[0],
@@ -266,6 +275,10 @@ public class ContentProviderTests3{
 
 			assertEquals(Set.of(JavaCore.create(javaPackageLeaf)), children,
 					"Physical package hierarchy leaked beside its Java package"); //$NON-NLS-1$
+			Object javaFileParent= provider.getParent(javaFile);
+			assertTrue(javaFileParent instanceof IPackageFragment, "Java source did not have a package parent"); //$NON-NLS-1$
+			assertEquals(javaFileParent, provider.getPipelinedParent(javaFile, javaPackageLeaf),
+					"Link with Editor moved Java source to the physical resource projection"); //$NON-NLS-1$
 
 			children= new LinkedHashSet<>(Set.of(db, configFile));
 			provider.getPipelinedChildren(resources, children);
@@ -279,6 +292,8 @@ public class ContentProviderTests3{
 			assertEquals(migration, physicalMigration.getAdapter(IFolder.class), "Physical fold adapted to the wrong folder"); //$NON-NLS-1$
 			assertEquals("db/migration", physicalMigration.toString(), "Wrong physical folded-folder label"); //$NON-NLS-1$ //$NON-NLS-2$
 			assertEquals(resources, provider.getPipelinedParent(physicalMigration, null), "Wrong physical folded-folder parent"); //$NON-NLS-1$
+			assertEquals(physicalMigration, provider.getPipelinedParent(migrationFile, migration),
+					"Link with Editor could not reconstruct the folded physical parent"); //$NON-NLS-1$
 			JavaElementComparator comparator= new JavaElementComparator();
 			assertEquals(comparator.category(db), comparator.category(physicalMigration),
 					"Folded resource folder was not sorted as a folder"); //$NON-NLS-1$
@@ -302,6 +317,31 @@ public class ContentProviderTests3{
 			assertEquals("db/migration", javaMigration.toString(), "Wrong Java Resources folded-folder label"); //$NON-NLS-1$ //$NON-NLS-2$
 			assertEquals(resourceRoot, provider.getPipelinedParent(javaMigration, null), "Wrong Java Resources folded-folder parent"); //$NON-NLS-1$
 			assertFalse(physicalMigration.equals(javaMigration), "Physical and Java Resources folds shared their identity"); //$NON-NLS-1$
+
+			SimpleSelectionProvider viewerSelectionProvider= new SimpleSelectionProvider();
+			viewerSelectionProvider.setSelection(new StructuredSelection(physicalMigration));
+			FoldedResourceSelectionProvider actionSelectionProvider=
+					new FoldedResourceSelectionProvider(viewerSelectionProvider);
+			assertEquals(new StructuredSelection(migration), actionSelectionProvider.getSelection(),
+					"Actions did not receive the folded folder's leaf resource"); //$NON-NLS-1$
+			assertEquals(new StructuredSelection(physicalMigration), viewerSelectionProvider.getSelection(),
+					"Action selection conversion changed the viewer selection"); //$NON-NLS-1$
+
+			AtomicReference<SelectionChangedEvent> translatedEvent= new AtomicReference<>();
+			AtomicInteger eventCount= new AtomicInteger();
+			ISelectionChangedListener listener= event -> {
+				translatedEvent.set(event);
+				eventCount.incrementAndGet();
+			};
+			actionSelectionProvider.addSelectionChangedListener(listener);
+			viewerSelectionProvider.setSelection(new StructuredSelection(physicalMigration));
+			assertSame(actionSelectionProvider, translatedEvent.get().getSelectionProvider(),
+					"Translated event exposed the viewer selection provider"); //$NON-NLS-1$
+			assertEquals(new StructuredSelection(migration), translatedEvent.get().getSelection(),
+					"Selection event did not contain the leaf resource"); //$NON-NLS-1$
+			actionSelectionProvider.removeSelectionChangedListener(listener);
+			viewerSelectionProvider.setSelection(new StructuredSelection(physicalMigration));
+			assertEquals(1, eventCount.get(), "Removed action listener was still notified"); //$NON-NLS-1$
 		} finally {
 			provider.dispose();
 		}
